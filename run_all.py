@@ -1,0 +1,17 @@
+"""Run every implemented part in order: python run_all.py (requires python generate_data.py first)."""
+import logging
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
+
+from instamart import io_utils  # noqa: E402
+from instamart.part_a import pipeline as part_a  # noqa: E402
+
+PARTS = [("A", part_a.run)]  # later phases append ("B", ...), ("C", ...), ("D", ...)
+
+if __name__ == "__main__":
+    io_utils.setup_logging()
+    for name, run in PARTS:
+        logging.getLogger("run_all").info("running Part %s", name)
+        run()
