@@ -405,11 +405,44 @@
       h("p", { class: "small muted" }, ("" + (int(q.row_count)) + " result row" + (q.row_count === 1 ? "" : "s") + (shown < q.row_count ? ("; showing the first " + (int(shown))) : "") + ".")),
       result);
   }
+  /** pandas cross-check of Q2, order_amount statistics, correlation matrix and the README's four EDA answers. */
+  function edaCard(e, notes) {
+    const s = e.amount_stats;
+    const st = e.correlation.strongest;
+    const vars = Object.keys(e.correlation.matrix);
+    const isStrong = (a, b) => (a === st.a && b === st.b) || (a === st.b && b === st.a);
+    const signed = (v) => { const t = dec(Math.abs(v), 3); return ("" + (t === "0.000" ? "" : v > 0 ? "+" : "−") + (t)); };
+    const corr = table([{ key: "v", label: "", rowHeader: true }].concat(vars.map((c) => ({
+      key: c, label: c, num: true, fmt: (v) => signed(v),
+      cls: (r) => (isStrong(r.v, c) ? "cell-strong" : r.v === c ? "muted" : ""),
+    }))), vars.map((v) => ({ v, ...e.correlation.matrix[v] })), { label: "Correlation matrix", caption: "Pearson r, completed orders" });
+    const cityTotal = { city: "All", _total: true, sum_inr: e.city_aggregates.reduce((n, r) => n + r.sum_inr, 0), count: e.city_aggregates.reduce((n, r) => n + r.count, 0) };
+    cityTotal.mean_inr = cityTotal.sum_inr / cityTotal.count;
+    return card("pandas cross-check and EDA", sub("Completed orders only, recomputed in pandas from the clean CSVs."), h("div", { class: "stack" },
+      h("p", {}, badge(e.pivot_matches_sql ? "pivot equals SQL" : "pivot differs from SQL", e.pivot_matches_sql ? "success" : "danger"), " ",
+        ("pivot_table grand total " + (inr(e.pivot_grand_total_inr)) + " versus SQL Q2 total " + (inr(e.sql_q2_total_inr)) + ".")),
+      h("div", { class: "grid grid-2" },
+        h("div", { class: "stack" }, h("h3", { text: "order_amount per city" }),
+          table([{ key: "city", label: "City", rowHeader: true }, { key: "sum_inr", label: "Sum", num: true }, { key: "mean_inr", label: "Mean", num: true },
+            { key: "count", label: "Orders", num: true }], e.city_aggregates.concat(cityTotal), { label: "order_amount per city", rowClass: (r) => (r._total ? "total-row" : null) })),
+        h("div", { class: "stack" }, h("h3", { text: "order_amount distribution" }),
+          table([{ key: "k", label: "Statistic", rowHeader: true }, { key: "v", label: "Value", num: true }], [
+            { k: "Mean", v: inr(s.mean) }, { k: "Median", v: inr(s.median) }, { k: "Skewness", v: dec(s.skewness, 2) },
+            { k: "Q1 / Q3", v: ("" + (inr(s.q1)) + " / " + (inr(s.q3))) }, { k: "IQR", v: inr(s.iqr) },
+            { k: "1.5 × IQR fences", v: ("" + (inr(s.lower_fence)) + " / " + (inr(s.upper_fence))) },
+            { k: "Outliers below / above", v: ("" + (int(s.outliers_below)) + " / " + (int(s.outliers_above))) },
+          ], { label: "order_amount statistics" }))),
+      h("div", { class: "stack" }, h("h3", { text: "Correlation" }), corr,
+        h("p", { class: "small muted" }, ("Strongest pair (highlighted): " + (st.a) + " with " + (st.b) + ", r = " + (signed(st.r)) + "."))),
+      notes.eda_answers.length ? h("div", { class: "stack" }, h("h3", { text: "What the data says" }),
+        h("dl", { class: "qa" }, notes.eda_answers.map((x) => h("div", {}, h("dt", { text: x.question }), h("dd", { text: x.answer }))))) : null));
+  }
   async function renderSql() {
     const d = await getCached("/api/part-a");
     const names = Object.keys(d.sql);
     if (!names.length) return [emptyState("No SQL results in the report.")];
-    return [card("Queries", tabs("SQL queries", names.map((n) => ({ id: ("sql-" + (n)), label: n, panel: () => sqlPanel(n, d.sql[n]) }))))];
+    return [card("Queries", tabs("SQL queries", names.map((n) => ({ id: ("sql-" + (n)), label: n, panel: () => sqlPanel(n, d.sql[n]) })))),
+      d.eda ? edaCard(d.eda, d.notes || { eda_answers: [] }) : null];
   }
 
   /* ---------------- 4 Customer segments ---------------- */
@@ -473,7 +506,9 @@
           table([{ key: "k", label: "K", rowHeader: true, num: true }, { key: "inertia", label: "Inertia", num: true, fmt: (v) => dec(v, 1) },
             { key: "silhouette", label: "Silhouette", num: true, fmt: (v) => h("span", {}, dec(v, 3), v === best ? " (best)" : "") },
             { key: "k", label: "Chosen", fmt: (v) => (v === s.chosen_k ? badge("chosen", "accent") : "") }],
-          s.k_sweep, { label: "K sweep", rowClass: (r) => (r.k === s.chosen_k ? "highlight" : null) })),
+          s.k_sweep, { label: "K sweep", rowClass: (r) => (r.k === s.chosen_k ? "highlight" : null) }),
+          d.notes && d.notes.inertia ? h("div", { class: "callout callout-info", role: "note" }, h("strong", { text: "Why inertia can't choose K on its own. " }),
+            (d.notes.inertia.charAt(0).toUpperCase() + d.notes.inertia.slice(1))) : null),
         card("PCA on scaled RFM", sub("Share of variance explained by each component."),
           bars(s.pca_explained_variance_ratio.map((v, i) => ({ label: ("PC" + (i + 1)), value: v, text: dec(v, 3) })), "PCA explained variance"),
           h("p", { class: "small" }, ("Together: " + (dec(s.pca_total, 3)) + ".")))),
@@ -646,6 +681,10 @@
         card("Routing breakdown", sub("Few-shot run with TOKEN_BUDGET 100,000; Premium from Part B segments."),
           bars(routes.map(([rt, n]) => ({ label: ("" + (rt) + " (" + (routePriority[rt] || "") + ")"), value: n, text: int(n) })), "Tickets per route"),
           h("p", { class: "small muted" }, ("Budget demo: zero-shot with TOKEN_BUDGET " + (int(d.budget_demo.token_budget)) + " used " + (int(d.budget_demo.total_tokens)) + " tokens; " + (int(d.budget_demo.budget_exhausted)) + " tickets ended budget_exhausted and went to human review.")))),
+      card("Retries", sub(("Every TransientLLMError in a full run was retried once and recovered; waits " + (dec(d.retries.min_wait, 4)) + "–" + (dec(d.retries.max_wait, 4)) + " s, " + (int(d.retries.permanent_errors)) + " permanent errors.")),
+        h("details", {}, h("summary", { text: ("Retry log (" + (int(d.retries.log.length)) + " lines)") }),
+          table([{ key: "ticket_id", label: "Ticket", rowHeader: true }, { key: "retry", label: "Retry", num: true },
+            { key: "wait", label: "Wait (s)", num: true, fmt: (v) => dec(v, 4) }], d.retries.log, { label: "Retry log", tall: true }))),
       card("All tickets", h("div", { class: "check-filters" },
         h("div", { class: "field" }, h("label", { for: "tk-search", text: "Ticket or customer id" }), search), stField, rtField, ctField), tkCount, tkTable),
     ];
@@ -687,6 +726,8 @@
     const score = (e) => (e.answerable ? ("" + (e.fact_in_answer) + "/" + (e.answerable)) : "");
     return [
       card("Ask the policy assistant", sub("Real TF-IDF retrieval (40-word chunks, overlap 10, top 3) and the mock POLICY ASSISTANT."), form, out),
+      d.notes && d.notes.tfidf ? card("How TF-IDF ranks chunks", h("p", { text: d.notes.tfidf.explanation }),
+        h("div", { class: "callout", role: "note" }, h("strong", { text: "Limitation. " }), d.notes.tfidf.limitation)) : null,
       h("div", { class: "grid grid-2" },
         card("Chunks per policy (overlap 10)", table([{ key: "s", label: "Source", rowHeader: true }, { key: "n", label: "Chunks", num: true }],
           Object.entries(d.chunks.per_source).map(([s, n]) => ({ s, n })).concat([{ s: "Total", n: d.chunks.total, _t: true }]), { label: "Chunks per source", rowClass: (r) => (r._t ? "total-row" : null) }),
@@ -833,6 +874,13 @@
         h("details", {}, h("summary", { text: "Show the full crash-and-resume trace" }), timeline(cr, { crashAfter: cr.tools_before_crash.length })),
         table([{ key: "tool", label: "Tool" }, { key: "order_id", label: "Order" }, { key: "refund_inr", label: "Refund", num: true }, { key: "run_id", label: "Run" }],
           d.ledger_lines, { caption: "Graded ledger (outputs/refund_ledger.jsonl, timestamps omitted)", label: "Graded ledger" })),
+      d.notes && d.notes.react_vs_plan.length ? card("ReAct versus plan-and-execute",
+        sub("Measured model calls and tokens of each graded ReAct run (outputs/agent_runs.jsonl), with the written comparison."),
+        h("div", { class: "grid grid-2" },
+          table([{ key: "scenario_id", label: "Scenario", rowHeader: true }, { key: "status", label: "Outcome", fmt: (v) => badge(v) },
+            { key: "llm_calls", label: "Model calls", num: true }, { key: "tokens_used", label: "Tokens", num: true },
+            { key: "tools_executed", label: "Tools run", num: true, fmt: (v) => int(v.length) }], scen, { label: "Measured calls per scenario" }),
+          h("div", { class: "stack" }, d.notes.react_vs_plan.map((p) => h("p", { text: p }))))) : null,
     ];
   }
 

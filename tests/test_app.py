@@ -83,6 +83,17 @@ class DashboardServerTest(unittest.TestCase):
         self.assertEqual(len(self.get_json("/api/part-c")["triage_rows"]), 164)
         self.assertEqual(len(self.get_json("/api/part-d")["scenarios"]), 7)
 
+    def test_readme_notes_are_found(self):
+        for path in ("/api/part-a", "/api/part-b", "/api/part-d"):
+            notes = self.get_json(path)["notes"]
+            self.assertEqual(len(notes["eda_answers"]), 4, path)
+            self.assertIn("does not establish causation", notes["eda_answers"][3]["answer"])
+            self.assertIn("K=8 always beats K=2", notes["inertia"])
+            self.assertTrue(notes["tfidf"]["explanation"].startswith("TF (term frequency)"))
+            self.assertIn("synonyms", notes["tfidf"]["limitation"])
+            self.assertEqual(len(notes["react_vs_plan"]), 3)
+        self.assertEqual(len(self.get_json("/api/part-c")["retries"]["log"]), 19)
+
     def test_customer_lookup(self):
         c = self.get_json("/api/customers/C0060")
         self.assertEqual(c["segment"]["segment_name"], "Premium Big Spenders")

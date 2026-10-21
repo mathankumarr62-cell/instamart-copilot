@@ -19,6 +19,7 @@ from instamart.validation import Check
 STATE_LOCK = threading.RLock()
 
 SQL_PREVIEW_ROWS = 200
+README = config.ROOT / "README.md"              # source of the written explanations shown on the dashboard
 CUSTOMER_ID = re.compile(r"C\d{4}")                     # used with fullmatch
 RETENTION_CAVEAT = ("The Premium flag comes from whole-window RFM, which includes the September lapse window, "
                     "so it is a post-hoc label: this retention list is illustrative and not a leakage-free evaluation.")
@@ -103,6 +104,49 @@ def sql_results(limit: int = SQL_PREVIEW_ROWS) -> dict[str, dict]:
     return out
 
 
+def _plain(text: str) -> str:
+    """Markdown paragraph as plain text: drop bold markers and code backticks, join wrapped lines."""
+    return " ".join(text.replace("**", "").replace("`", "").split())
+
+
+@lru_cache(maxsize=1)
+def _readme_sections() -> dict[str, list[str]]:
+    """README.md paragraphs keyed by their '## ' or '### ' heading (written explanations live only there)."""
+    sections, current = {}, None
+    for block in re.split(r"\n\s*\n", README.read_text(encoding="utf-8")):
+        block = block.strip()
+        heading = re.match(r"#{2,3} (.+)", block)
+        if heading:
+            current = heading.group(1).strip()
+            sections[current] = []
+        elif current and block:
+            sections[current].append(block)
+    return sections
+
+
+def _readme_bold(section: str, lead: str) -> tuple[str, str]:
+    """(bold lead, rest) of the paragraph in `section` that starts with **lead...; empty strings if absent."""
+    for block in _readme_sections().get(section, []):
+        m = re.match(r"\*\*(" + re.escape(lead) + r".*?)\*\*\s*(.*)", block, re.S)
+        if m:
+            return m.group(1).rstrip(".:").strip(), _plain(m.group(2))
+    return "", ""
+
+
+def readme_notes() -> dict:
+    """Written explanations from README.md: EDA answers, the inertia note, TF-IDF and ReAct versus plan-and-execute."""
+    eda = [_readme_bold("pandas cross-check and exploratory analysis", q) for q in
+           ("What is this data", "What do the distributions", "Are there outliers", "What relationships")]
+    tfidf_lead, tfidf = _readme_bold("Chunking and retrieval", "TF-IDF in two sentences")
+    explanation, _, limitation = tfidf.partition("Limitation:")
+    return {
+        "eda_answers": [{"question": q, "answer": a} for q, a in eda if q],
+        "inertia": _readme_bold("K-means on standardised R, F, M (n_init=10, random_state=42)", "Why inertia")[1],
+        "tfidf": {"explanation": explanation.strip(), "limitation": limitation.strip()} if tfidf_lead else None,
+        "react_vs_plan": [_plain(p) for p in _readme_sections().get("ReAct versus plan-and-execute", [])],
+    }
+
+
 def part_a() -> dict:
     """Audit, cleaning-rule log, before/after counts, SQL Q1-Q7 (summary + live result tables) and EDA."""
     a = report("a")
@@ -111,13 +155,13 @@ def part_a() -> dict:
         queries[name]["summary"] = {k: v for k, v in summary.items() if not isinstance(v, list)}
     return {"audit": a["audit"], "cleaning_rules": a["cleaning_rules"], "customers_clean": a["customers_clean"],
             "orders_clean": a["orders_clean"], "database_row_counts": a["database_row_counts"],
-            "sql": queries, "eda": a["eda"]}
+            "sql": queries, "eda": a["eda"], "notes": readme_notes()}
 
 
 def part_b() -> dict:
     """Segments (K table, profiles, PCA) and the lapse model results, with the retention-list caveat."""
     b = report("b")
-    return {"segments": b["segments"], "lapse": b["lapse"], "retention_caveat": RETENTION_CAVEAT}
+    return {"segments": b["segments"], "lapse": b["lapse"], "retention_caveat": RETENTION_CAVEAT, "notes": readme_notes()}
 
 
 def part_c() -> dict:
@@ -150,7 +194,7 @@ def part_d() -> dict:
                  "steps": runs.get(v["run_id"], {}).get("steps", [])} for k, v in d["demos"].items()}
     return {"chunks": d["chunks"], "retrieval_example": d["retrieval_example"], "evaluation": d["evaluation"],
             "scenarios": table, "demos": demos, "ledger_lines": d["ledger_lines"],
-            "example_questions": [r["question"] for r in d["evaluation"]["overlap_10"]["rows"]]}
+            "example_questions": [r["question"] for r in d["evaluation"]["overlap_10"]["rows"]], "notes": readme_notes()}
 
 
 @lru_cache(maxsize=1)
