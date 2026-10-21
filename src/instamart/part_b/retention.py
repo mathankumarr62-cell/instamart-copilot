@@ -21,5 +21,5 @@ def retention_list(model: Pipeline, x_test: pd.DataFrame, y_test: pd.Series,
 
 def write_retention_list(rows: pd.DataFrame) -> dict:
     """Write outputs/retention_list.csv and return the reported counts."""
-    rows.to_csv(config.RETENTION_LIST, index=False)
+    rows.to_csv(config.RETENTION_LIST, index=False, lineterminator="\n")
     return {"rows": int(len(rows)), "truly_lapsed": int(rows["actually_lapsed"].sum())}

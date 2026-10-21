@@ -94,7 +94,7 @@ def run_clustering(rfm: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     profile = profile_segments(rfm, labels)
     segments = segment_table(rfm, labels, profile)
     config.OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
-    segments.to_csv(config.CUSTOMER_SEGMENTS, index=False)
+    segments.to_csv(config.CUSTOMER_SEGMENTS, index=False, lineterminator="\n")
     ratios = pca_ratios(x)
     log.info("segments written to %s; PCA ratios %s", config.CUSTOMER_SEGMENTS, ratios)
     return segments, {"k_sweep": sweep, "chosen_k": config.CHOSEN_K, "profile": profile,
