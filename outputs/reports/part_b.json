@@ -1,0 +1,410 @@
+{
+  "segments": {
+    "rfm": {
+      "customers": 1175,
+      "recency_median": 19.0,
+      "recency_min": 0,
+      "recency_max": 180,
+      "frequency_mean": 9.46,
+      "frequency_max": 33,
+      "monetary_mean": 2552.06,
+      "monetary_max": 14766.55
+    },
+    "k_sweep": [
+      {
+        "k": 2,
+        "inertia": 1820.8,
+        "silhouette": 0.465
+      },
+      {
+        "k": 3,
+        "inertia": 1268.2,
+        "silhouette": 0.445
+      },
+      {
+        "k": 4,
+        "inertia": 743.1,
+        "silhouette": 0.526
+      },
+      {
+        "k": 5,
+        "inertia": 617.4,
+        "silhouette": 0.48
+      },
+      {
+        "k": 6,
+        "inertia": 503.2,
+        "silhouette": 0.482
+      },
+      {
+        "k": 7,
+        "inertia": 408.5,
+        "silhouette": 0.416
+      },
+      {
+        "k": 8,
+        "inertia": 366.5,
+        "silhouette": 0.412
+      }
+    ],
+    "chosen_k": 4,
+    "profile": [
+      {
+        "segment_id": 0,
+        "size": 436,
+        "recency": 28.9,
+        "frequency": 3.8,
+        "monetary": 1057.62,
+        "segment_name": "Occasional Shoppers",
+        "action": "Nudge a second monthly order with a free-delivery threshold reminder.",
+        "is_premium": false
+      },
+      {
+        "segment_id": 1,
+        "size": 138,
+        "recency": 24.1,
+        "frequency": 6.8,
+        "monetary": 7129.7,
+        "segment_name": "Premium Big Spenders",
+        "action": "Assign a priority support line and early access to new electronics launches.",
+        "is_premium": true
+      },
+      {
+        "segment_id": 2,
+        "size": 419,
+        "recency": 8.8,
+        "frequency": 19.4,
+        "monetary": 3410.02,
+        "segment_name": "Loyal Regulars",
+        "action": "Reward with a subscription-style loyalty pass to protect their weekly basket.",
+        "is_premium": false
+      },
+      {
+        "segment_id": 3,
+        "size": 182,
+        "recency": 109.0,
+        "frequency": 2.2,
+        "monetary": 685.99,
+        "segment_name": "Dormant / Lapsing",
+        "action": "Send a time-limited win-back coupon on their favourite grocery staples.",
+        "is_premium": false
+      }
+    ],
+    "pca_explained_variance_ratio": [
+      0.6343,
+      0.218
+    ],
+    "pca_total": 0.8523
+  },
+  "lapse": {
+    "cohort": {
+      "customers": 1156,
+      "lapsed": 443,
+      "lapsed_pct": 38.32,
+      "train_rows": 924,
+      "test_rows": 232,
+      "train_lapsed": 354,
+      "test_lapsed": 89,
+      "features": [
+        "recency",
+        "frequency",
+        "monetary",
+        "avg_discount_pct",
+        "cancellation_rate",
+        "avg_delivery_minutes",
+        "age",
+        "tenure_days",
+        "city",
+        "gender",
+        "favourite_category"
+      ],
+      "missing_feature_values": 0
+    },
+    "scaler_check": {
+      "scaler_mean_frequency": 8.1147,
+      "cohort_mean_frequency": 8.0285
+    },
+    "baseline": {
+      "accuracy": 0.6164,
+      "confusion_matrix": [
+        [
+          143,
+          0
+        ],
+        [
+          89,
+          0
+        ]
+      ],
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    "grid_search": {
+      "logistic_regression": {
+        "best_params": {
+          "C": 100
+        },
+        "best_cv_f1": 0.6506,
+        "fits": 25
+      },
+      "random_forest": {
+        "best_params": {
+          "max_depth": 8,
+          "min_samples_leaf": 10
+        },
+        "best_cv_f1": 0.6823,
+        "fits": 45
+      }
+    },
+    "test": {
+      "logistic_regression": {
+        "accuracy": 0.7284,
+        "confusion_matrix": [
+          [
+            111,
+            32
+          ],
+          [
+            31,
+            58
+          ]
+        ],
+        "precision": 0.6444,
+        "recall": 0.6517,
+        "f1": 0.648
+      },
+      "random_forest": {
+        "accuracy": 0.7328,
+        "confusion_matrix": [
+          [
+            112,
+            31
+          ],
+          [
+            31,
+            58
+          ]
+        ],
+        "precision": 0.6517,
+        "recall": 0.6517,
+        "f1": 0.6517
+      }
+    },
+    "selected_model": "random_forest",
+    "oversampling": {
+      "class_counts": {
+        "0": 570,
+        "1": 570
+      },
+      "original_lr": {
+        "accuracy": 0.7284,
+        "confusion_matrix": [
+          [
+            111,
+            32
+          ],
+          [
+            31,
+            58
+          ]
+        ],
+        "precision": 0.6444,
+        "recall": 0.6517,
+        "f1": 0.648
+      },
+      "balanced_lr": {
+        "accuracy": 0.7155,
+        "confusion_matrix": [
+          [
+            90,
+            53
+          ],
+          [
+            13,
+            76
+          ]
+        ],
+        "precision": 0.5891,
+        "recall": 0.8539,
+        "f1": 0.6972
+      }
+    },
+    "rf_top_importances": [
+      {
+        "feature": "frequency",
+        "importance": 0.3072
+      },
+      {
+        "feature": "monetary",
+        "importance": 0.2468
+      },
+      {
+        "feature": "recency",
+        "importance": 0.1149
+      },
+      {
+        "feature": "cancellation_rate",
+        "importance": 0.0615
+      },
+      {
+        "feature": "avg_discount_pct",
+        "importance": 0.058
+      }
+    ],
+    "lr_coefficients": [
+      {
+        "feature": "frequency",
+        "coef": -1.6982,
+        "sign": "-"
+      },
+      {
+        "feature": "favourite_category_Electronics",
+        "coef": -1.1367,
+        "sign": "-"
+      },
+      {
+        "feature": "favourite_category_Grocery",
+        "coef": -0.4487,
+        "sign": "-"
+      },
+      {
+        "feature": "city_Delhi",
+        "coef": -0.3745,
+        "sign": "-"
+      },
+      {
+        "feature": "monetary",
+        "coef": 0.2846,
+        "sign": "+"
+      },
+      {
+        "feature": "favourite_category_Personal Care",
+        "coef": -0.284,
+        "sign": "-"
+      },
+      {
+        "feature": "favourite_category_Snacks",
+        "coef": -0.2792,
+        "sign": "-"
+      },
+      {
+        "feature": "city_Mumbai",
+        "coef": -0.2303,
+        "sign": "-"
+      },
+      {
+        "feature": "gender_male",
+        "coef": -0.2079,
+        "sign": "-"
+      },
+      {
+        "feature": "city_Chennai",
+        "coef": -0.1696,
+        "sign": "-"
+      },
+      {
+        "feature": "gender_unknown",
+        "coef": -0.1604,
+        "sign": "-"
+      },
+      {
+        "feature": "city_Hyderabad",
+        "coef": -0.1357,
+        "sign": "-"
+      },
+      {
+        "feature": "cancellation_rate",
+        "coef": -0.1236,
+        "sign": "-"
+      },
+      {
+        "feature": "avg_delivery_minutes",
+        "coef": 0.0785,
+        "sign": "+"
+      },
+      {
+        "feature": "tenure_days",
+        "coef": -0.0502,
+        "sign": "-"
+      },
+      {
+        "feature": "recency",
+        "coef": 0.0396,
+        "sign": "+"
+      },
+      {
+        "feature": "city_Pune",
+        "coef": -0.0316,
+        "sign": "-"
+      },
+      {
+        "feature": "age",
+        "coef": 0.0233,
+        "sign": "+"
+      },
+      {
+        "feature": "avg_discount_pct",
+        "coef": 0.0044,
+        "sign": "+"
+      }
+    ],
+    "model_reload_identical": true,
+    "retention_list": {
+      "rows": 10,
+      "truly_lapsed": 0,
+      "table": [
+        {
+          "customer_id": "C0060",
+          "lapse_probability": 0.5025,
+          "actually_lapsed": 0
+        },
+        {
+          "customer_id": "C0267",
+          "lapse_probability": 0.4986,
+          "actually_lapsed": 0
+        },
+        {
+          "customer_id": "C0133",
+          "lapse_probability": 0.4978,
+          "actually_lapsed": 0
+        },
+        {
+          "customer_id": "C1112",
+          "lapse_probability": 0.4926,
+          "actually_lapsed": 0
+        },
+        {
+          "customer_id": "C0862",
+          "lapse_probability": 0.4792,
+          "actually_lapsed": 0
+        },
+        {
+          "customer_id": "C0802",
+          "lapse_probability": 0.4547,
+          "actually_lapsed": 0
+        },
+        {
+          "customer_id": "C0021",
+          "lapse_probability": 0.4543,
+          "actually_lapsed": 0
+        },
+        {
+          "customer_id": "C1000",
+          "lapse_probability": 0.4528,
+          "actually_lapsed": 0
+        },
+        {
+          "customer_id": "C0553",
+          "lapse_probability": 0.4518,
+          "actually_lapsed": 0
+        },
+        {
+          "customer_id": "C1008",
+          "lapse_probability": 0.4497,
+          "actually_lapsed": 0
+        }
+      ]
+    }
+  }
+}
