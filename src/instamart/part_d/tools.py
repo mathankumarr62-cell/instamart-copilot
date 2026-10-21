@@ -1,5 +1,6 @@
 """The refund agent's five tools, their JSON-style specification and the name -> function map (task 5)."""
 import contextvars
+from contextlib import closing
 import json
 import sqlite3
 from datetime import datetime, timezone
@@ -14,7 +15,7 @@ current_run_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("cur
 
 def get_order(order_id: str) -> dict:
     """Look the order up in data/instamart.db; return its refund-relevant fields or an error."""
-    with sqlite3.connect(config.DB_PATH) as conn:
+    with closing(sqlite3.connect(config.DB_PATH)) as conn:      # closing() really closes; "with conn" only commits
         row = conn.execute("SELECT order_id, status, order_amount, delivery_minutes FROM orders WHERE order_id = ?",
                            (order_id,)).fetchone()
     if row is None:
