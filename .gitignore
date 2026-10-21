@@ -20,3 +20,6 @@ data/
 *.pptx
 *.mp3
 *.mp4
+
+# dashboard live-demo sandbox (never graded)
+state/demo/

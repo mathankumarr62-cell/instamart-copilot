@@ -96,3 +96,12 @@ AGENT_MAX_ITERATIONS = 6
 AGENT_TOKEN_LIMIT = 6000
 AGENT_TIME_LIMIT_SECONDS = 10
 DEMO_SMALL_TOKEN_LIMIT = 200
+
+# Optional dashboard (app/server.py): read-mostly; live demos write only under state/demo/
+APP_DIR = ROOT / "app"
+STATIC_DIR = APP_DIR / "static"
+DEMO_DIR = STATE_DIR / "demo"
+DEMO_LEDGER = DEMO_DIR / "refund_ledger.jsonl"
+APP_HOST = "127.0.0.1"
+APP_PORT = 8000
+MAX_BODY_CHARS = 5000                           # larger request bodies are rejected with 413
