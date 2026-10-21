@@ -67,3 +67,32 @@ RETENTION_TOP_N = 10
 def report_path(part: str) -> Path:
     """Return the JSON report path for a part letter, e.g. 'a' -> outputs/reports/part_a.json."""
     return REPORTS_DIR / f"part_{part.lower()}.json"
+
+# Part C inputs, outputs and parameters (fixed by the brief)
+TRIAGE_RESULTS = OUTPUTS_DIR / "triage_results.csv"
+TRIAGE_BUDGET_DEMO = OUTPUTS_DIR / "triage_budget_demo.csv"
+MAX_INPUT_TOKENS = 400
+MAX_RETRIES = 3
+BASE_DELAY = 0.05                               # seconds; wait before retry n = BASE_DELAY * 2**n * jitter
+JITTER_RANGE = (0.9, 1.15)
+RETRY_SEED = 42                                 # seeds the jitter generator so waits are reproducible
+CATEGORIES = ["billing", "delivery", "technical", "fraud"]
+DEMO_TOKEN_BUDGET = 6000
+FINAL_TOKEN_BUDGET = 100000
+TRIAGE_COLUMNS = ["ticket_id", "customer_id", "status", "category", "segment_name", "priority", "route",
+                  "tokens_used"]
+
+# Part D inputs, outputs and parameters (fixed by the brief)
+POLICY_EVAL = RAW_DIR / "policy_eval.csv"
+AGENT_SCENARIOS = RAW_DIR / "agent_scenarios.csv"
+AGENT_RUNS = OUTPUTS_DIR / "agent_runs.jsonl"
+REFUND_LEDGER = OUTPUTS_DIR / "refund_ledger.jsonl"
+CHUNK_WORDS = 40
+CHUNK_OVERLAP = 10
+TOP_K = 3
+REFUND_MIN_MINUTES = 45                         # delivered in MORE than this many minutes -> full refund
+ESCALATION_THRESHOLD_INR = 1000.0               # refunds ABOVE this go to a human
+AGENT_MAX_ITERATIONS = 6
+AGENT_TOKEN_LIMIT = 6000
+AGENT_TIME_LIMIT_SECONDS = 10
+DEMO_SMALL_TOKEN_LIMIT = 200
