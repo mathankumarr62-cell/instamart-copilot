@@ -1,0 +1,22 @@
+# secrets and environment
+.env
+.venv/
+__pycache__/
+*.pyc
+
+# private brief (not redistributed)
+Instamart_Capstone_Copy_Ready.txt
+
+# generated data (rebuilt by the Reproduce commands)
+data/
+
+# media is never committed
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.pdf
+*.pptx
+*.mp3
+*.mp4
