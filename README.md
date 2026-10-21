@@ -11,7 +11,7 @@ This is an internal Copilot for the (fictional, synthetic) Swiggy Instamart cust
 
 Everything runs offline. It uses only the Python standard library, pandas, numpy, scikit-learn and joblib. Every language-model call goes through the supplied `mock_llm.py`, so no API key or network connection is needed. All money is in INR.
 
-Layout: thin entry scripts at the root (`part_a.py`, `run_all.py`, `validate.py`) and the code in `src/instamart/`. Paths and constants live in `config.py`, with one module per task under `part_a/`. The SQL is in `sql/queries.sql` and the unit tests are in `tests/`. Every reported number is written to `outputs/reports/part_<x>.json`.
+Layout: thin entry scripts at the root (`part_a.py` to `part_d.py`, `run_all.py`, `validate.py`) and the code in `src/instamart/`. Paths and constants live in `config.py`, with one module per responsibility under `part_a/` to `part_d/`; `llm_backend.py` is the single import point for `mock_llm.py`. The SQL is in `sql/queries.sql` and the unit tests are in `tests/`. Every reported number is written to `outputs/reports/part_<x>.json`.
 
 ## Reproduce
 
@@ -26,10 +26,11 @@ Run these from the repository root (Python 3.11 or newer):
 5. `python part_a.py` (clean, store, query: writes data/clean, data/instamart.db, outputs/reports/part_a.json)
 6. `python part_b.py` (segments and lapse model: writes outputs/customer_segments.csv, lapse_model.joblib, retention_list.csv, reports/part_b.json)
 7. `python part_c.py` (ticket triage: writes outputs/triage_results.csv, triage_budget_demo.csv, reports/part_c.json)
-8. `python -m unittest`
-9. `python validate.py` (last line: `ALL CHECKPOINTS PASSED`)
+8. `python part_d.py` (policy RAG and refund agent: writes outputs/agent_runs.jsonl, refund_ledger.jsonl, state/*.json, reports/part_d.json)
+9. `python -m unittest`
+10. `python validate.py` (last line: `ALL CHECKPOINTS PASSED`)
 
-`python run_all.py` runs steps 5 to 7 in one go.
+`python run_all.py` runs steps 5 to 8 in one go.
 
 ## Part A
 
@@ -354,7 +355,105 @@ The few-shot prompt costs 12,012 extra tokens per run, 2.4 times as many (81.7 m
 
 ## Part D
 
-To be completed in Phase 4.
+`part_d.py` builds the policy assistant and runs the refund agent. Code: `src/instamart/part_d/` (chunking, retrieval, rag, evaluation, tools, agent, checkpoint). Every model call goes through `mock_llm.chat`. Numbers come from `outputs/reports/part_d.json`. A full run first clears `outputs/agent_runs.jsonl`, `outputs/refund_ledger.jsonl` and the `state/*.json` checkpoints, so re-runs reproduce the same files (only ledger timestamps change).
+
+### Chunking and retrieval
+
+Each document is split on whitespace into 40-word chunks that start 30 words apart (overlap 10), stopping after the first chunk that reaches the last word. Each chunk records its source file.
+
+| Source | Chunks (overlap 10) | Chunks (overlap 0) |
+|---|---|---|
+| refund_policy.txt | 4 | 3 |
+| delivery_policy.txt | 3 | 3 |
+| escalation_policy.txt | 3 | 2 |
+| payment_policy.txt | 3 | 3 |
+| privacy_policy.txt | 2 | 2 |
+| **Total** | **15** | **13** |
+
+`TfidfVectorizer()` is fitted on the chunk texts, a query is transformed with the same vectorizer, and `retrieve(query, k=3)` ranks chunks by `cosine_similarity`. It returns `{source, score, text}`. For "refund policy late delivery", the top three are all `refund_policy.txt` (scores 0.2719, 0.2514, 0.2454).
+
+**TF-IDF in two sentences.** TF (term frequency) measures how often a word appears in a chunk, so a chunk that keeps saying "refund" scores high for "refund". IDF (inverse document frequency) down-weights words that appear in many chunks, such as "order" or "customer", so rare and specific words like "wallet" or "OTP" decide the ranking. **Limitation:** TF-IDF only matches exact word forms. "money back" or "reimbursement" share no terms with a chunk that says "refund", so a question phrased with synonyms can retrieve nothing relevant even though the answer exists.
+
+### Grounded answers and evaluation
+
+`answer(question)` retrieves three chunks and sends two messages. The system message contains `POLICY ASSISTANT` and tells the model to answer only from the context, or say it could not find the information. The user message is `CONTEXT:\n` + each chunk as `[<source>]\n<text>` + `\nQUESTION:\n` + the question. The function returns the text and the three sources.
+
+| Metric (`data/raw/policy_eval.csv`) | Overlap 10 | Overlap 0 |
+|---|---|---|
+| Answerable: expected_doc in top 3 | 12/12 | 12/12 |
+| Answerable: expected_fact in answer (case-sensitive) | 12/12 | 10/12 |
+| Unanswerable: answer begins "I could not find" | 2/2 | 2/2 |
+
+**Why overlap 0 breaks.** Both failures are sentences cut in half at the 40-word chunk boundary:
+
+- *"What delivery time makes a completed order eligible for a full refund?"* The refund chunk ends with "If a completed order is delivered in more than 45 minutes, the customer" and the next chunk starts "receives a full refund of the order amount." The words "full refund" from the question are in the second half, so the model answers "receives a full refund of the order amount.", which lacks "more than 45 minutes". With overlap 10, the whole sentence sits in one chunk.
+- *"How soon is money returned when a payment fails but is deducted?"* The payment chunk ends at "the amount is returned automatically". The words "within 48 hours" open the next chunk, which is not in the top three, so the answer lacks "48 hours".
+
+### Tools
+
+`TOOLS_SPEC` lists five tools, each with a name, a one-sentence description and JSON-schema-style parameters. `TOOL_MAP` maps each name to its function, and `execute_tool` looks the name up and calls it with the model's argument dictionary. Unknown tools or bad arguments become `{"error": ...}` observations.
+
+| Tool | Behaviour |
+|---|---|
+| `get_order(order_id)` | Reads `data/instamart.db` and returns `{order_id, status, order_amount, delivery_minutes}` (`null` minutes for undelivered orders) or `{"error": "order not found"}` |
+| `search_policy(query)` | `{"results": retrieve(query)}` |
+| `calculate_refund(order_amount, delivery_minutes)` | Completed and delivered in **more than 45 minutes** gives 100% of order_amount, otherwise 0, rounded to 2 decimals (45 min gives INR 0, 46 min gives the full amount) |
+| `issue_refund(order_id, refund_inr)` | Appends `{timestamp, tool, order_id, refund_inr, run_id}` to `outputs/refund_ledger.jsonl` and returns `{"refund_inr"}`. As a second guard, it refuses amounts above INR 1000 (INR 1000 is issued, INR 1000.01 is refused) |
+| `escalate_to_human(order_id, refund_inr)` | Same ledger line, for a human lead to approve |
+
+### Refund agent (ReAct, default limits: 6 iterations, 6,000 tokens, 10 s)
+
+`run_agent` starts from a system message containing `AGENT` and the user message. It appends `{"role": "assistant", "content": None, "tool_calls": [{id, name, arguments}]}` and `{"role": "tool", "tool_call_id", "name", "content": <JSON string>}` for every tool step. The status is the word before the colon in the final answer. Each run appends one line to `outputs/agent_runs.jsonl`, holding every step's tool, arguments and observation.
+
+| Scenario | Status | Refund (INR) | Model calls | Tokens | Tools executed |
+|---|---|---|---|---|---|
+| S1 | REFUND | 128.25 | 5 | 1,122 | get_order, search_policy, calculate_refund, issue_refund |
+| S2 | REFUND | 135.00 | 5 | 1,122 | get_order, search_policy, calculate_refund, issue_refund |
+| S3 | ESCALATE | 1999.00 | 5 | 1,109 | get_order, search_policy, calculate_refund, escalate_to_human |
+| S4 | DENIED | 0.00 | 4 | 785 | get_order, search_policy, calculate_refund (delivered in 45 minutes or less) |
+| S5 | DENIED | 0.00 | 3 | 472 | get_order, search_policy (order not completed) |
+| S6 | NOT_FOUND | 0.00 | 2 | 162 | get_order |
+| S7 | FALLBACK_MAX_ITERATIONS | 0.00 | 6 | 3,270 | search_policy × 6 |
+
+S7 made all six model calls well under the 6,000-token limit. The ledger holds S1's and S2's issued refunds, S3's escalation, and a fourth line from the crash-and-resume demo (run_id `S1_crash_resume`).
+
+### Stopping safely
+
+The loop enforces three limits:
+
+- At the top of each iteration it stops with `FALLBACK_TIMEOUT` once `time.monotonic()` shows that `time_limit_seconds` or more have passed.
+- It stops with `FALLBACK_MAX_ITERATIONS` after `max_iterations` model calls without a final answer.
+- After each call it adds `usage.total_tokens`. If the total is over `token_limit`, it stops with `FALLBACK_TOKEN_LIMIT` *before* running the requested tool.
+
+Every fallback returns the steps so far and a handoff summary (the reason, calls, tokens, tools run and the original request).
+
+| Demonstration | Status | Model calls | Tokens | Tools executed |
+|---|---|---|---|---|
+| S7, default limits | **FALLBACK_MAX_ITERATIONS** | 6 | 3,270 | search_policy × 6 |
+| S1 with token_limit = 200 | **FALLBACK_TOKEN_LIMIT** | 3 | 489 | get_order, search_policy (the requested calculate_refund was not run) |
+| S1 with time_limit_seconds = 0 | **FALLBACK_TIMEOUT** | 0 | 0 | none (stopped before the first model call) |
+
+### Crash and resume
+
+After every tool observation, the agent writes `state/<run_id>.json` atomically. The file holds the run id, scenario id, full message list, tokens used, model calls, step number, the tools already executed and the steps. `resume_agent(run_id)` loads it and continues the same loop. Model calls and tokens carry over; the wall clock restarts.
+
+Demo with S1 (run id `S1_crash_resume`): a `SimulatedCrash` is raised right after the second tool's checkpoint is saved, then `resume_agent` is called.
+
+| Phase | Tools executed, in order | Model calls |
+|---|---|---|
+| Before the crash | 1. get_order, 2. search_policy | 2 |
+| After resume | 3. calculate_refund, 4. issue_refund | 3 |
+| **Overall** | **get_order, search_policy, calculate_refund, issue_refund** (4 executions, none repeated) | 5 |
+
+The resumed run ends with **REFUND, INR 128.25**, the same result as the uninterrupted S1 run.
+
+### ReAct versus plan-and-execute
+
+My ReAct agent calls the model once per step and resends the growing history each time. That cost S1 5 calls and 1,122 tokens, S4 4 calls, S5 3 calls and 472 tokens, S6 2 calls and 162 tokens. Plan-and-execute asks once for the full step list (get_order, search_policy, calculate_refund, issue_refund) and runs it without the model. The happy path then needs about 2 calls (plan plus final answer), and tokens drop sharply because observations are not resent on every call.
+
+That saving disappears on the unexpected branches, which make up 4 of my 7 scenarios. If S6 returns "order not found", or S5's order is cancelled, a fixed plan would carry on into calculate_refund with missing or ineligible data. The executor must notice the error and replan, which costs a third call and still risks acting on stale assumptions. ReAct simply stops early: S6 finishes in 2 calls and S5 in 3, fewer than the planned path. The refund amount also decides between issue_refund and escalate_to_human, and only observation-driven reasoning picks that correctly without a replan.
+
+For this refund workflow I would keep ReAct. Each step depends on the last observation and the money-moving step must follow a verified calculation. Running about 1,100 tokens per request is cheap, and the iteration, token and time limits, plus the ledger guard against issuing over INR 1000, bound the extra cost and risk. Plan-and-execute fits long, predictable pipelines better.
 
 ## Limitations and Next Steps
 
@@ -366,4 +465,5 @@ To be completed in Phase 4.
 - The decision threshold is fixed at 0.5. A cost-weighted threshold, using the value of a retained customer and the cost of a coupon, would suit the retention budget better.
 - Part C's classifier is a keyword mock, so the 100% few-shot accuracy says the prompt carries the right signal for this mock, not that a real model would reach it. The validator checks the format, not the truth: wrong but well-formed categories pass, so a sample of automatically routed tickets should still be audited.
 - The redaction patterns only cover the three formats in the brief. Names, addresses, card numbers, or phone numbers written with spaces or a +91 prefix would pass through unredacted.
-- Later Parts and their limitations are added in the next phases.
+- TF-IDF retrieval matches exact words only, so synonyms ("money back" for "refund") can miss. Fixed 40-word chunks also cut sentences, as the overlap-0 run shows. Sentence-aware chunking or embedding retrieval would be the next step.
+- The refund agent follows the mock's scripted reasoning. Its safety comes from the deterministic tools (the refund rule and the INR 1000 guard in `issue_refund`) and the three limits, not from the model. The ledger is not idempotent per order, so the crash-and-resume demo's refund for ORD-100048 sits beside S1's (told apart by run_id). Production code would reject a second refund for the same order.
