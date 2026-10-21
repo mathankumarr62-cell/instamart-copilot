@@ -199,6 +199,12 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px
 /* tables */
 .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); max-width: 100%; }
 .table-wrap.tall { max-height: 520px; overflow-y: auto; }
+/* compact: headers wrap and cells tighten so short wide tables fit a half-width card; still scrolls when narrow */
+.table-wrap.compact table { font-size: .85rem; }
+.table-wrap.compact th, .table-wrap.compact td { padding: var(--s2) var(--s1); }
+.table-wrap.compact :is(th, td):first-child { padding-left: var(--s2); }
+.table-wrap.compact :is(th, td):last-child { padding-right: var(--s2); }
+.table-wrap.compact thead th { white-space: normal; vertical-align: bottom; }
 table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 caption { text-align: left; padding: var(--s2) var(--s3); font-weight: 600; color: var(--text-muted); caption-side: top; }
 th, td { padding: var(--s2) var(--s3); text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }

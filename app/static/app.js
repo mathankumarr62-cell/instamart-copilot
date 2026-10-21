@@ -106,11 +106,11 @@
   /* ---------------- tables ---------------- */
   /** columns: [{key, label, num, fmt(v,row), cls, rowHeader, sort}] */
   function table(columns, rows, opts = {}) {
-    const { caption, sortable = false, rowClass, tall = false, label, emptyText = "No rows to show." } = opts;
+    const { caption, sortable = false, rowClass, tall = false, compact = false, label, emptyText = "No rows to show." } = opts;
     let data = rows.slice();
     let sortKey = null;
     let dir = 1;
-    const wrap = h("div", { class: ("table-wrap" + (tall ? " tall" : "")), tabindex: "0", role: "region", "aria-label": label || caption || "Table" });
+    const wrap = h("div", { class: ("table-wrap" + (tall ? " tall" : "") + (compact ? " compact" : "")), tabindex: "0", role: "region", "aria-label": label || caption || "Table" });
     const tbl = h("table", {}, caption ? h("caption", { text: caption }) : null);
     const headRow = h("tr");
     const heads = columns.map((c) => {
@@ -331,7 +331,7 @@
       { item: "Extra rows beyond one per order_id", before: f.orders_rows - f.distinct_order_id, after: o.rows - o.distinct_order_id },
       { item: "Pending orders", before: f.pending_rows, after: o.pending },
       { item: "Unusable order_amount", before: f.non_numeric_amounts, after: o.missing_order_amount },
-      { item: "Blank delivery_minutes (completed orders after cleaning)", before: f.blank_delivery_minutes, after: o.missing_delivery_completed },
+      { item: "Blank delivery_minutes (raw: all rows; clean: completed orders)", before: f.blank_delivery_minutes, after: o.missing_delivery_completed },
       { item: "Blank age", before: f.blank_age, after: c.missing_age },
       { item: "City spellings", before: f.raw_city_spellings, after: Object.keys(c.city_counts).length },
       { item: "Blank gender", before: f.blank_gender, after: 0 },
@@ -380,8 +380,19 @@
     return table(cols, rows.concat(totals), { label: "Completed revenue by city and category", rowClass: (r) => (r._total ? "total-row" : null),
       caption: "Completed revenue (INR); darker cells earned more" });
   }
+  const SUMMARY_LABELS = {
+    customers: "Customers", products: "Products", total_revenue_inr: "Total revenue", max_city: "Top city",
+    max_category: "Top category", max_revenue_inr: "Top cell revenue", avg_spend_inr: "Average spend",
+    rank_ne_row_number: "Rows where RANK ≠ ROW_NUMBER", first_day: "First day", last_day: "Last day",
+    last_cumulative_inr: "Final cumulative revenue",
+  };
+  const summaryLabel = (k) => {
+    if (SUMMARY_LABELS[k]) return SUMMARY_LABELS[k];
+    const base = (isMoneyKey(k) && k.endsWith("_inr") ? k.slice(0, -4) : k).replace(/_/g, " ");
+    return base.charAt(0).toUpperCase() + base.slice(1);
+  };
   function sqlPanel(name, q) {
-    const facts = Object.entries(q.summary || {}).map(([k, v]) => h("span", { class: "chip chip-static" }, ("" + (k.replace(/_/g, " ")) + ": "), h("strong", { text: cell(k, v) })));
+    const facts = Object.entries(q.summary || {}).map(([k, v]) => h("span", { class: "chip chip-static" }, ("" + (summaryLabel(k)) + ": "), h("strong", { text: cell(k, v) })));
     const shown = q.rows.length;
     const result = name === "Q2" ? q2Pivot(q)
       : table(q.columns.map((col) => ({ key: col, label: col, num: q.rows.some((r) => isNum(r[q.columns.indexOf(col)])) })),
@@ -514,6 +525,7 @@
       card("Premium retention list",
         h("div", { class: "callout", role: "note" }, h("strong", { text: "Post-hoc label. " }), d.retention_caveat),
         h("p", {}, ("" + (int(l.retention_list.truly_lapsed)) + " of these " + (int(l.retention_list.rows)) + " customers actually lapsed.")),
+        h("p", { class: "small muted", text: "Premium customers' predicted probabilities sit in a narrow 0.45–0.50 band, so the top 10 by probability did not include the ones who lapsed; the list is illustrative (see the post-hoc note above)." }),
         table([{ key: "customer_id", label: "Customer", rowHeader: true }, { key: "lapse_probability", label: "Lapse probability", num: true, fmt: (v) => dec(v, 4) },
           { key: "actually_lapsed", label: "Actually lapsed", fmt: (v) => (v ? badge("yes", "danger") : badge("no", "neutral")) }],
         l.retention_list.table, { label: "Retention list", sortable: true }),
@@ -623,7 +635,7 @@
           table([{ key: "prompt", label: "Prompt", rowHeader: true }, { key: "ptok", label: "Prompt tokens", num: true }, { key: "classified", label: "Classified", num: true },
             { key: "correct", label: "Correct", num: true }, { key: "accuracy_pct", label: "Accuracy", num: true, fmt: (v) => pct(v) },
             { key: "total_tokens", label: "Total tokens", num: true }, { key: "tokens_per_classified", label: "Tokens / ticket", num: true, fmt: (v) => dec(v, 1) }],
-          cmp, { label: "Prompt comparison" }),
+          cmp, { label: "Prompt comparison", compact: true }),
           h("p", { class: "small" }, ("Few-shot costs " + (int(f.total_tokens - z.total_tokens)) + " more tokens per run (" + (dec(f.tokens_per_classified - z.tokens_per_classified, 1)) + " per classified ticket) and fixes " + (int(f.correct - z.correct)) + " errors."))),
         card("Zero-shot confusion", sub("Rows = true category, columns = predicted (classified tickets only)."),
           table([{ key: "true", label: "true \\ predicted", rowHeader: true }].concat(cats.map((c) => ({ key: c, label: c, num: true,
