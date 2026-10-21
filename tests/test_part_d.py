@@ -66,6 +66,21 @@ class RefundToolTest(unittest.TestCase):
                          [("issue_refund", "ORD-1"), ("escalate_to_human", "ORD-2")])
         self.assertTrue(all("timestamp" in x for x in lines))
 
+    def test_refund_actions_are_idempotent_per_order(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = Path(tmp) / "ledger.jsonl"
+            with mock.patch.object(tools, "LEDGER_PATH", ledger):
+                self.assertEqual(tools.issue_refund("ORD-1", 128.25), {"refund_inr": 128.25})
+                self.assertEqual(tools.issue_refund("ORD-1", 128.25),
+                                 {"refund_inr": 128.25, "duplicate_prevented": True})
+                self.assertEqual(tools.escalate_to_human("ORD-2", 1999), {"refund_inr": 1999.0})
+                self.assertEqual(tools.escalate_to_human("ORD-2", 1999),
+                                 {"refund_inr": 1999.0, "duplicate_prevented": True})
+                self.assertEqual(tools.escalate_to_human("ORD-1", 128.25), {"refund_inr": 128.25})
+                lines = [json.loads(x) for x in ledger.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([(x["tool"], x["order_id"]) for x in lines],
+                         [("issue_refund", "ORD-1"), ("escalate_to_human", "ORD-2"), ("escalate_to_human", "ORD-1")])
+
     def test_get_order(self):
         self.assertEqual(tools.get_order("ORD-999999"), {"error": "order not found"})
         self.assertEqual(tools.get_order("ORD-100048")["order_amount"], 128.25)
@@ -106,6 +121,17 @@ class AgentTest(unittest.TestCase):
         result = agent.resume_agent("r")
         self.assertEqual(result["tools_executed"], ["get_order", "search_policy", "calculate_refund", "issue_refund"])
         self.assertEqual((result["status"], result["refund_inr"]), ("REFUND", 128.25))
+
+    def test_resume_after_s1_does_not_refund_twice(self):
+        agent.run_agent(S1, "S1")
+        with self.assertRaises(agent.SimulatedCrash):
+            agent.run_agent(S1, "S1", run_id="d", crash_after_tools=2)
+        result = agent.resume_agent("d")
+        self.assertEqual(result["tools_executed"], ["get_order", "search_policy", "calculate_refund", "issue_refund"])
+        self.assertEqual((result["status"], result["refund_inr"]), ("REFUND", 128.25))
+        self.assertTrue(result["steps"][-1]["observation"]["duplicate_prevented"])
+        ledger = (Path(self.tmp.name) / "ledger.jsonl").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(ledger), 1)
 
     def test_message_shapes(self):
         with self.assertRaises(agent.SimulatedCrash):

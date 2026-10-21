@@ -641,7 +641,7 @@
       "status": "REFUND",
       "refund_inr": 128.25,
       "llm_calls": 5,
-      "tokens_used": 1122,
+      "tokens_used": 1125,
       "tools_executed": [
         "get_order",
         "search_policy",
@@ -678,12 +678,6 @@
       "order_id": "ORD-100145",
       "refund_inr": 1999.0,
       "run_id": "S3"
-    },
-    {
-      "tool": "issue_refund",
-      "order_id": "ORD-100048",
-      "refund_inr": 128.25,
-      "run_id": "S1_crash_resume"
     }
   ]
 }

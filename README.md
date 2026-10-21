@@ -9,7 +9,7 @@ This is an internal Copilot for the (fictional, synthetic) Swiggy Instamart cust
 - **Part C**: support-ticket triage with guardrails.
 - **Part D**: a policy RAG assistant and a refund agent.
 
-Everything runs offline. It uses only the Python standard library, pandas, numpy, scikit-learn and joblib. Every language-model call goes through the supplied `mock_llm.py`, so no API key or network connection is needed. All money is in INR.
+Everything runs offline. It uses only the Python standard library, pandas, numpy, scikit-learn and joblib. Every language-model call goes through the supplied `mock_llm.py`, so no API key or network connection is needed. All money is in INR. Tested with Python 3.14 and the exact versions pinned in `requirements.txt` (pandas 3.0.6, numpy 2.5.4, scikit-learn 1.9.1, joblib 1.6.0).
 
 Layout: thin entry scripts at the root (`part_a.py` to `part_d.py`, `run_all.py`, `validate.py`) and the code in `src/instamart/`. Paths and constants live in `config.py`, with one module per responsibility under `part_a/` to `part_d/`; `llm_backend.py` is the single import point for `mock_llm.py`. The SQL is in `sql/queries.sql` and the unit tests are in `tests/`. Every reported number is written to `outputs/reports/part_<x>.json`.
 
@@ -401,6 +401,8 @@ Each document is split on whitespace into 40-word chunks that start 30 words apa
 | `issue_refund(order_id, refund_inr)` | Appends `{timestamp, tool, order_id, refund_inr, run_id}` to `outputs/refund_ledger.jsonl` and returns `{"refund_inr"}`. As a second guard, it refuses amounts above INR 1000 (INR 1000 is issued, INR 1000.01 is refused) |
 | `escalate_to_human(order_id, refund_inr)` | Same ledger line, for a human lead to approve |
 
+Both ledger tools are idempotent per order: if `refund_ledger.jsonl` already holds a line for the same `order_id` and tool, they append nothing and return the recorded `{"refund_inr"}` with `"duplicate_prevented": true`, so a retried or resumed run can never pay or escalate the same order twice.
+
 ### Refund agent (ReAct, default limits: 6 iterations, 6,000 tokens, 10 s)
 
 `run_agent` starts from a system message containing `AGENT` and the user message. It appends `{"role": "assistant", "content": None, "tool_calls": [{id, name, arguments}]}` and `{"role": "tool", "tool_call_id", "name", "content": <JSON string>}` for every tool step. The status is the word before the colon in the final answer. Each run appends one line to `outputs/agent_runs.jsonl`, holding every step's tool, arguments and observation.
@@ -415,7 +417,7 @@ Each document is split on whitespace into 40-word chunks that start 30 words apa
 | S6 | NOT_FOUND | 0.00 | 2 | 162 | get_order |
 | S7 | FALLBACK_MAX_ITERATIONS | 0.00 | 6 | 3,270 | search_policy × 6 |
 
-S7 made all six model calls well under the 6,000-token limit. The ledger holds S1's and S2's issued refunds, S3's escalation, and a fourth line from the crash-and-resume demo (run_id `S1_crash_resume`).
+S7 made all six model calls well under the 6,000-token limit. The ledger holds exactly three lines: S1's and S2's issued refunds and S3's escalation. The crash-and-resume demo re-runs S1's order, so its `issue_refund` returns `duplicate_prevented: true` and adds no line.
 
 ### Stopping safely
 
@@ -445,7 +447,7 @@ Demo with S1 (run id `S1_crash_resume`): a `SimulatedCrash` is raised right afte
 | After resume | 3. calculate_refund, 4. issue_refund | 3 |
 | **Overall** | **get_order, search_policy, calculate_refund, issue_refund** (4 executions, none repeated) | 5 |
 
-The resumed run ends with **REFUND, INR 128.25**, the same result as the uninterrupted S1 run.
+The resumed run ends with **REFUND, INR 128.25**, the same result as the uninterrupted S1 run. Because S1 already refunded ORD-100048, the resumed `issue_refund` is a prevented duplicate and the ledger keeps one line for that order.
 
 ### ReAct versus plan-and-execute
 
@@ -466,4 +468,4 @@ For this refund workflow I would keep ReAct. Each step depends on the last obser
 - Part C's classifier is a keyword mock, so the 100% few-shot accuracy says the prompt carries the right signal for this mock, not that a real model would reach it. The validator checks the format, not the truth: wrong but well-formed categories pass, so a sample of automatically routed tickets should still be audited.
 - The redaction patterns only cover the three formats in the brief. Names, addresses, card numbers, or phone numbers written with spaces or a +91 prefix would pass through unredacted.
 - TF-IDF retrieval matches exact words only, so synonyms ("money back" for "refund") can miss. Fixed 40-word chunks also cut sentences, as the overlap-0 run shows. Sentence-aware chunking or embedding retrieval would be the next step.
-- The refund agent follows the mock's scripted reasoning. Its safety comes from the deterministic tools (the refund rule and the INR 1000 guard in `issue_refund`) and the three limits, not from the model. The ledger is not idempotent per order, so the crash-and-resume demo's refund for ORD-100048 sits beside S1's (told apart by run_id). Production code would reject a second refund for the same order.
+- The refund agent follows the mock's scripted reasoning. Its safety comes from the deterministic tools (the refund rule and the INR 1000 guard in `issue_refund`) and the three limits, not from the model.

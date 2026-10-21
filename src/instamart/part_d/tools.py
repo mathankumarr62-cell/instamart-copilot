@@ -41,6 +41,26 @@ def requires_escalation(refund_inr: float) -> bool:
     return float(refund_inr) > config.ESCALATION_THRESHOLD_INR
 
 
+def _ledger_entry(tool: str, order_id: str) -> dict | None:
+    """Return the existing ledger line for this tool and order_id, or None."""
+    if not LEDGER_PATH.exists():
+        return None
+    for line in LEDGER_PATH.read_text(encoding="utf-8").splitlines():
+        entry = json.loads(line) if line.strip() else {}
+        if entry.get("tool") == tool and entry.get("order_id") == order_id:
+            return entry
+    return None
+
+
+def _record_once(tool: str, order_id: str, refund_inr: float) -> dict:
+    """Append a ledger line unless one already exists for this tool and order_id (idempotent per order)."""
+    existing = _ledger_entry(tool, order_id)
+    if existing is not None:
+        return {"refund_inr": round(float(existing["refund_inr"]), 2), "duplicate_prevented": True}
+    _append_ledger(tool, order_id, refund_inr)
+    return {"refund_inr": round(float(refund_inr), 2)}
+
+
 def _append_ledger(tool: str, order_id: str, refund_inr: float) -> None:
     """Append one JSON line describing a refund action to the ledger."""
     entry = {"timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"), "tool": tool,
@@ -54,14 +74,12 @@ def issue_refund(order_id: str, refund_inr: float) -> dict:
     """Issue a refund of up to INR 1000 (larger amounts are refused and must be escalated)."""
     if requires_escalation(refund_inr):
         return {"error": "refund above INR 1000 must be escalated to a human"}
-    _append_ledger("issue_refund", order_id, refund_inr)
-    return {"refund_inr": round(float(refund_inr), 2)}
+    return _record_once("issue_refund", order_id, refund_inr)
 
 
 def escalate_to_human(order_id: str, refund_inr: float) -> dict:
     """Record the refund for a human support lead to approve."""
-    _append_ledger("escalate_to_human", order_id, refund_inr)
-    return {"refund_inr": round(float(refund_inr), 2)}
+    return _record_once("escalate_to_human", order_id, refund_inr)
 
 
 def _params(properties: dict, required: list[str]) -> dict:

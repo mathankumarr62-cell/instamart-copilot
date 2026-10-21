@@ -1,5 +1,6 @@
 """Part D reference checkpoints, recomputed from part_d.json, the JSONL logs and state/."""
 import json
+from collections import Counter
 
 from instamart import config, io_utils
 from instamart.part_d import checkpoint
@@ -74,6 +75,10 @@ def _demo_checks(report: dict, runs: list[dict], ledger: list[dict]) -> list[Che
                                                         ("escalate_to_human", "ORD-100145", 1999.0)], scenario_ledger),
         Check("every ledger line has timestamp, tool, order_id, refund_inr", True,
               all({"timestamp", "tool", "order_id", "refund_inr"} <= e.keys() for e in ledger)),
+        Check("ledger has one line per order_id and action", [],
+              [k for k, n in Counter((e["order_id"], e["tool"]) for e in ledger).items() if n > 1]),
+        Check("crash+resume refund was a prevented duplicate", True,
+              resume_run["steps"][-1]["observation"].get("duplicate_prevented", False)),
     ]
 
 
