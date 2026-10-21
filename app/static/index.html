@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Instamart Copilot</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <svg class="sprite" aria-hidden="true" focusable="false">
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+    <symbol id="i-data" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+    <symbol id="i-sql" viewBox="0 0 24 24"><path d="M8 6l-6 6 6 6M16 6l6 6-6 6"/></symbol>
+    <symbol id="i-seg" viewBox="0 0 24 24"><circle cx="7" cy="8" r="3"/><circle cx="17" cy="8" r="3"/><circle cx="12" cy="17" r="3"/></symbol>
+    <symbol id="i-risk" viewBox="0 0 24 24"><path d="M12 3l10 18H2zM12 10v5M12 18v.5"/></symbol>
+    <symbol id="i-ticket" viewBox="0 0 24 24"><path d="M3 7h18v4a2 2 0 0 0 0 4v4H3v-4a2 2 0 0 0 0-4zM9 7v12"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 4h7a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H4zM20 4h-4a2 2 0 0 0-2 2"/></symbol>
+    <symbol id="i-agent" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="2"/><path d="M12 4v4M9 13v1M15 13v1M2 13h3M19 13h3"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></symbol>
+    <symbol id="i-theme" viewBox="0 0 24 24"><path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></symbol>
+  </svg>
+
+  <header class="topbar">
+    <button class="icon-btn menu-btn" id="menu-toggle" type="button" aria-expanded="false" aria-controls="sidebar">
+      <svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg><span class="visually-hidden">Menu</span>
+    </button>
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">IC</span>
+      <span class="brand-text"><strong>Instamart Copilot</strong><span class="brand-sub">Customer Intelligence &amp; Support</span></span>
+    </div>
+    <div class="topbar-actions">
+      <span class="badge badge-neutral" id="checkpoint-badge" role="status">Checkpoints: loading</span>
+      <button class="icon-btn" id="theme-toggle" type="button" aria-pressed="false" title="Switch colour theme">
+        <svg class="icon" aria-hidden="true"><use href="#i-theme"/></svg><span class="visually-hidden">Dark theme</span>
+      </button>
+    </div>
+  </header>
+
+  <nav class="sidebar" id="sidebar" aria-label="Sections">
+    <ul>
+      <li><a href="#overview" data-nav="overview"><svg class="icon" aria-hidden="true"><use href="#i-home"/></svg>Overview</a></li>
+      <li><a href="#data" data-nav="data"><svg class="icon" aria-hidden="true"><use href="#i-data"/></svg>Data Quality</a></li>
+      <li><a href="#sql" data-nav="sql"><svg class="icon" aria-hidden="true"><use href="#i-sql"/></svg>SQL Insights</a></li>
+      <li><a href="#segments" data-nav="segments"><svg class="icon" aria-hidden="true"><use href="#i-seg"/></svg>Customer Segments</a></li>
+      <li><a href="#lapse" data-nav="lapse"><svg class="icon" aria-hidden="true"><use href="#i-risk"/></svg>Lapse Risk</a></li>
+      <li><a href="#triage" data-nav="triage"><svg class="icon" aria-hidden="true"><use href="#i-ticket"/></svg>Support Triage</a></li>
+      <li><a href="#policy" data-nav="policy"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg>Policy Assistant</a></li>
+      <li><a href="#agent" data-nav="agent"><svg class="icon" aria-hidden="true"><use href="#i-agent"/></svg>Refund Agent</a></li>
+      <li><a href="#about" data-nav="about"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg>About</a></li>
+    </ul>
+  </nav>
+
+  <main id="main" tabindex="-1">
+    <p class="visually-hidden" id="status-live" aria-live="polite"></p>
+
+    <section class="view" id="view-overview" aria-labelledby="h-overview" hidden>
+      <div class="view-head"><h1 id="h-overview" tabindex="-1">Overview</h1>
+        <p class="lede">From raw exports to a support copilot: every number below is read from the pipeline's reports.</p></div>
+      <div class="view-body" data-body></div>
+    </section>
+
+    <section class="view" id="view-data" aria-labelledby="h-data" hidden>
+      <div class="view-head"><h1 id="h-data" tabindex="-1">Data Quality <span class="part-tag">Part A</span></h1>
+        <p class="lede">What was wrong with the raw exports, the rules that fixed it, and how many rows each rule changed.</p></div>
+      <div class="view-body" data-body></div>
+    </section>
+
+    <section class="view" id="view-sql" aria-labelledby="h-sql" hidden>
+      <div class="view-head"><h1 id="h-sql" tabindex="-1">SQL Insights <span class="part-tag">Part A</span></h1>
+        <p class="lede">Seven business questions answered in SQLite. Results are re-run read-only against data/instamart.db.</p></div>
+      <div class="view-body" data-body></div>
+    </section>
+
+    <section class="view" id="view-segments" aria-labelledby="h-segments" hidden>
+      <div class="view-head"><h1 id="h-segments" tabindex="-1">Customer Segments <span class="part-tag">Part B</span></h1>
+        <p class="lede">K-means on standardised recency, frequency and monetary value, with one campaign per segment.</p></div>
+      <div class="view-body" data-body></div>
+    </section>
+
+    <section class="view" id="view-lapse" aria-labelledby="h-lapse" hidden>
+      <div class="view-head"><h1 id="h-lapse" tabindex="-1">Lapse Risk <span class="part-tag">Part B</span></h1>
+        <p class="lede">Who stops ordering in September? Leakage-safe features, tuned models and a Premium retention list.</p></div>
+      <div class="view-body" data-body></div>
+    </section>
+
+    <section class="view" id="view-triage" aria-labelledby="h-triage" hidden>
+      <div class="view-head"><h1 id="h-triage" tabindex="-1">Support Triage <span class="part-tag">Part C</span></h1>
+        <p class="lede">Guardrails, PII redaction, retries, rule-based validation and routing for every support ticket.</p></div>
+      <div class="view-body" data-body></div>
+    </section>
+
+    <section class="view" id="view-policy" aria-labelledby="h-policy" hidden>
+      <div class="view-head"><h1 id="h-policy" tabindex="-1">Policy Assistant <span class="part-tag">Part D</span></h1>
+        <p class="lede">Answers grounded in five policy documents via TF-IDF retrieval, or an honest "I could not find".</p></div>
+      <div class="view-body" data-body></div>
+    </section>
+
+    <section class="view" id="view-agent" aria-labelledby="h-agent" hidden>
+      <div class="view-head"><h1 id="h-agent" tabindex="-1">Refund Agent <span class="part-tag">Part D</span></h1>
+        <p class="lede">A ReAct agent with five tools, three safety limits and crash-safe checkpoints.</p></div>
+      <div class="view-body" data-body></div>
+    </section>
+
+    <section class="view" id="view-about" aria-labelledby="h-about" hidden>
+      <div class="view-head"><h1 id="h-about" tabindex="-1">About</h1>
+        <p class="lede">How the Copilot is built, how to reproduce it, and where it falls short.</p></div>
+      <div class="view-body">
+        <div class="card">
+          <h2>Architecture</h2>
+          <p>Four parts run in order. Each writes its graded files and a JSON report to <code>outputs/reports/</code>; this dashboard only reads those reports and files.</p>
+          <ul class="plain-list">
+            <li><strong>Part A</strong> audits and cleans the raw CSV exports, stores them in SQLite (<code>data/instamart.db</code>) and answers seven SQL questions.</li>
+            <li><strong>Part B</strong> builds RFM features, K-means segments and a lapse-prediction model (<code>outputs/lapse_model.joblib</code>).</li>
+            <li><strong>Part C</strong> triages tickets through guardrails, redaction, a retried model call, rule-based validation and routing.</li>
+            <li><strong>Part D</strong> answers policy questions with TF-IDF retrieval and runs a ReAct refund agent with checkpoints.</li>
+          </ul>
+          <p>Every language-model call goes through the offline <code>mock_llm.py</code>: no network, no API key. The server uses only the Python standard library and binds to 127.0.0.1.</p>
+        </div>
+        <div class="card">
+          <h2>Reproduce the graded pipeline</h2>
+          <ol class="plain-list">
+            <li><code>python -m venv .venv</code> and activate it</li>
+            <li><code>python -m pip install -r requirements.txt</code></li>
+            <li><code>python generate_data.py</code></li>
+            <li><code>python run_all.py</code></li>
+            <li><code>python validate.py</code> (ends with ALL CHECKPOINTS PASSED)</li>
+          </ol>
+          <p>Then start this dashboard with <code>python app/server.py</code>. Live demos write only to <code>state/demo/</code>, never to the graded ledger or run log.</p>
+        </div>
+        <div class="card">
+          <h2>Limitations</h2>
+          <ul class="plain-list">
+            <li>The data is synthetic, so patterns reflect the generator, not real customers.</li>
+            <li>The language model is a deterministic keyword mock; accuracy here says the prompt carries the right signal for the mock, not for a real model.</li>
+            <li>TF-IDF matches exact words only: synonyms such as "money back" for "refund" can miss.</li>
+            <li>The Premium flag is a post-hoc whole-window label, so the retention list is illustrative, not a leakage-free evaluation.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
