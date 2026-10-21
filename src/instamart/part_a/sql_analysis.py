@@ -10,7 +10,7 @@ from instamart import config
 
 log = logging.getLogger(__name__)
 
-_HEADER = re.compile(r"^-- (Q\d+):.*$", re.M)
+_HEADER = re.compile(r"^-- (Q\d+):[^\n]*", re.M)
 
 
 def load_queries(path: Path = config.QUERIES_PATH) -> dict[str, str]:
