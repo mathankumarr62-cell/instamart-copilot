@@ -98,7 +98,7 @@ Storage: the clean tables are in `data/clean/{customers,products,orders}.csv` an
 | Q6 | RANK / DENSE_RANK / ROW_NUMBER | top customer per city: Bengaluru C0082 (INR 12,856.20), Chennai C0930 (INR 10,151.40), Delhi C0291 (INR 13,742.60), Hyderabad C0743 (INR 12,730.05), Mumbai C0693 (INR 14,766.55), Pune C0426 (INR 10,377.10); 8 rows have RANK() ≠ ROW_NUMBER() |
 | Q7 | running total | 183 daily rows (2025-04-01 to 2025-09-30); the last cumulative value is INR 2,998,668.80 |
 
-Why RANK() and ROW_NUMBER() differ: customers with the same total_spend in a city get the same RANK(), but ROW_NUMBER() always gives each row a new number. From the second member of a tie onwards, the two numbers no longer match.
+Why RANK() and ROW_NUMBER() differ: customers with the same total_spend in a city share one RANK(), while ROW_NUMBER() always gives each row a new number, so from the second member of a tie onwards the two numbers no longer match.
 
 Q2 completed revenue in INR (the pandas `pivot_table(..., margins=True)` grand total, INR 2,998,668.80, equals the SQL total):
 
@@ -173,7 +173,7 @@ All customer behaviour comes from completed orders in `data/clean/orders.csv`, c
 
 **Chosen K = 4.** The elbow is at K=4: going from 3 to 4 clusters cuts inertia by 41%, and each later step saves only 10–19%. K=4 also has the best silhouette score (0.526). Its four groups map directly onto four distinct campaigns.
 
-**Why inertia can't choose K on its own:** inertia is the sum of squared distances from each customer to its nearest centroid. Adding centroids can only keep that sum the same or make it smaller, so K=8 always beats K=2, and K=1,175 would reach zero. A falling inertia therefore rewards over-splitting. It has to be read for its elbow and weighed against silhouette and against whether the business can act on the segments.
+**Why inertia can't choose K on its own:** inertia is the sum of squared distances from each customer to its nearest centroid, and adding centroids can only keep that sum the same or make it smaller, so K=8 always beats K=2 and K=1,175 would reach zero. A falling inertia therefore rewards over-splitting rather than revealing real structure. It has to be read for its elbow and weighed against silhouette and against whether the business can act on the segments.
 
 ### Segment profiles (K = 4)
 
