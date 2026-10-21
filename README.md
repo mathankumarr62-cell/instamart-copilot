@@ -2,37 +2,102 @@
 
 ## Overview
 
-This is an internal Copilot for the (fictional, synthetic) Swiggy Instamart customer-experience team, built in four connected Parts:
+The Instamart Customer Intelligence & Support Copilot is an internal tool for the (fictional, synthetic) Swiggy Instamart customer-experience team. It turns dirty raw exports into a trusted database: INR 2,998,668.80 of completed revenue across 11,110 orders. It splits 1,175 customers into four actionable segments and predicts which of them will stop ordering (38.32% of the cohort lapsed in September). It triages 164 support tickets without leaking personal data to the model, sending every fraud ticket to the security team. Finally, it answers policy questions from the policy documents only and runs a refund agent that refunds automatically up to INR 1000, escalates larger amounts and never pays the same order twice. Everything runs offline with the Python standard library, pandas, numpy, scikit-learn and joblib. Every language-model call goes through the supplied `mock_llm.py`, so no API key or network connection is needed. All money is in INR.
 
-- **Part A**: turns messy raw exports into a trusted SQLite database and answers business questions in SQL and pandas.
-- **Part B**: customer segments and lapse prediction.
-- **Part C**: support-ticket triage with guardrails.
-- **Part D**: a policy RAG assistant and a refund agent.
+### Results at a glance
 
-Everything runs offline. It uses only the Python standard library, pandas, numpy, scikit-learn and joblib. Every language-model call goes through the supplied `mock_llm.py`, so no API key or network connection is needed. All money is in INR. Tested with Python 3.14 and the exact versions pinned in `requirements.txt` (pandas 3.0.6, numpy 2.5.4, scikit-learn 1.9.1, joblib 1.6.0).
+Every row is asserted by `python validate.py`, which checks 179 gating checkpoints and ends with `ALL CHECKPOINTS PASSED`. "Ours" values come from `outputs/reports/part_<x>.json`.
 
-Layout: thin entry scripts at the root (`part_a.py` to `part_d.py`, `run_all.py`, `validate.py`) and the code in `src/instamart/`. Paths and constants live in `config.py`, with one module per responsibility under `part_a/` to `part_d/`; `llm_backend.py` is the single import point for `mock_llm.py`. The SQL is in `sql/queries.sql` and the unit tests are in `tests/`. Every reported number is written to `outputs/reports/part_<x>.json`.
+| Checkpoint | Reference (brief) | Ours | Match |
+|---|---|---|---|
+| Clean orders: rows / completed / cancelled / pending | 12,309 / 11,110 / 1,199 / 0 | 12,309 / 11,110 / 1,199 / 0 | yes |
+| Completed revenue | INR 2,998,668.80 | INR 2,998,668.80 | yes |
+| Q2 largest city × category cell | Bengaluru / Electronics, INR 233,909 | Bengaluru / Electronics, INR 233,909.45 | yes |
+| Q5 customers above the average spend | 550; average INR 2,552.06 | 550; average INR 2,552.06 | yes |
+| Q6 rows with RANK() ≠ ROW_NUMBER() | 8 | 8 | yes |
+| Q7 daily rows / last cumulative value | 183 / INR 2,998,668.80 | 183 / INR 2,998,668.80 | yes |
+| RFM customers / recency median | 1,175 / 19 | 1,175 / 19 | yes |
+| K = 4 inertia / silhouette | 743.1 / 0.526 (±5%, ±0.05) | 743.1 / 0.526 | yes |
+| PCA explained variance (2 components) | about 0.634 + 0.218 = 0.852 (±0.02) | 0.634 + 0.218 = 0.852 | yes |
+| Lapse cohort / lapsed | 1,156 / 443 (38.32%) | 1,156 / 443 (38.32%) | yes |
+| Baseline "never lapsed" accuracy / F1 | 61.6% / 0 | 61.6% / 0 | yes |
+| Logistic regression best C / test F1 | C = 1 / about 0.62 ("of this order") | C = 100 / 0.648 | of this order (see Part B) |
+| Random forest best params / test F1 | depth 8, leaf 10 / about 0.65 (selected ≥ 0.55) | depth 8, leaf 10 / 0.652 | yes |
+| Oversampling: recall / precision | about 0.64 → 0.85 / stays near 0.6 | 0.652 → 0.854 / 0.644 → 0.589 | yes |
+| PII redacted: emails / phones / order ids / left | 55 / 91 / 132 / 0 | 55 / 91 / 132 / 0 | yes |
+| Statuses: classified_json / keyword / invalid | 135 / 12 / 9 | 135 / 12 / 9 | yes |
+| Zero-shot accuracy (fraud→billing, technical→billing) | 85.7% (11, 10) | 85.7% (11, 10) | yes |
+| Few-shot accuracy | 100% | 100.0% | yes |
+| Policy chunks (40 words, overlap 10) | 15 | 15 | yes |
+| RAG evaluation: doc in top 3 / fact in answer / fallback | 12/12, 12/12, 2/2 | 12/12, 12/12, 2/2 | yes |
+| Agent S1 to S7 outcomes | REFUND 128.25, REFUND 135.00, ESCALATE 1999.00, DENIED, DENIED, NOT_FOUND, FALLBACK | same | yes |
+| S1 model calls | 5 | 5 | yes |
+| Stop safely: S7 / token_limit 200 / time_limit 0 | MAX_ITERATIONS / TOKEN_LIMIT / TIMEOUT fallbacks | FALLBACK_MAX_ITERATIONS / FALLBACK_TOKEN_LIMIT / FALLBACK_TIMEOUT | yes |
+| Crash and resume tools / result | get_order, search_policy, calculate_refund, issue_refund / REFUND 128.25 | same | yes |
+
+### Architecture
+
+```
+ generate_data.py ──► data/raw/  (customers, products, orders, tickets, policies, eval + scenarios)
+                         │
+                         ▼
+ Part A  audit ─► clean ─► SQLite data/instamart.db ─► SQL Q1-Q7 + pandas EDA
+                         │ data/clean/*.csv
+                         ▼
+ Part B  RFM ─► K-means segments ─► customer_segments.csv
+          └──► lapse features (orders before 2025-09-01) ─► tuned models ─► lapse_model.joblib, retention_list.csv
+                         │ segment / Premium flag
+                         ▼
+ Part C  ticket ─► guardrails ─► PII redaction ─► mock_llm (retries) ─► validator ─► route ─► triage_results.csv
+                         │
+                         ▼
+ Part D  policies ─► 40-word chunks ─► TF-IDF ─► grounded answers (mock_llm)
+          refund agent (ReAct, 5 tools, 3 limits) ─► agent_runs.jsonl, refund_ledger.jsonl, state/ checkpoints
+
+ Every part ─► outputs/reports/part_<x>.json ─► validate.py, README and the optional dashboard (app/)
+```
+
+### Repository structure
+
+```
+generate_data.py, mock_llm.py   supplied files, unmodified
+requirements.txt                pip freeze of the pinned environment
+part_a.py ... part_d.py         thin entry scripts, one per part
+run_all.py                      runs Parts A-D in order, one summary line per part
+validate.py                     asserts every reference checkpoint
+sql/queries.sql                 Part A queries Q1-Q7
+src/instamart/
+  config.py                     every path and constant (pathlib, relative to the repo root)
+  part_a/ ... part_d/           one module per responsibility (cleaning, rfm, triage, agent, ...)
+  checkpoints.py, validation.py the shared checkpoint list and Check machinery
+  llm_backend.py                the single import point for mock_llm.py
+  dashboard/                    read-only views, live demos and the HTTP handler for app/
+app/server.py, app/static/      optional dashboard (standard library + plain HTML/CSS/JS)
+tests/                          unittest suites for every part and the dashboard
+outputs/                        committed graded outputs and reports/part_<x>.json
+state/                          agent checkpoints (state/demo/ is the gitignored dashboard sandbox)
+```
+
+### Dashboard (optional)
+
+After the Reproduce steps, run `python app/server.py` and open http://127.0.0.1:8000 (stop it with Ctrl+C; `--port` picks another port). It has nine sections: Overview with the live checkpoint table, Data Quality, SQL Insights, Customer Segments with a customer lookup, Lapse Risk, Support Triage with "Try a ticket", Policy Assistant, Refund Agent with live runs and traces, and About. The server uses only the standard library, binds to 127.0.0.1, and only reads the graded outputs. Its live agent demos write to `state/demo/` and never to `outputs/`. The API has `GET /api/overview`, `/api/part-a` to `/api/part-d`, `/api/customers/<id>`, and `POST /api/triage/try`, `/api/policy/ask`, `/api/agent/run` and `/api/agent/reset`.
 
 ## Reproduce
 
-Run these from the repository root (Python 3.11 or newer):
+Requires Python 3.11 or newer. The pinned versions publish wheels for Python 3.11 to 3.14, and every checkpoint was verified from a clean clone on Python 3.12.10 and 3.14. Run from the repository root:
 
 1. `python -m venv .venv`
-2. Activate the environment:
-   - Windows (PowerShell): `.venv\Scripts\Activate.ps1` (cmd: `.venv\Scripts\activate.bat`)
-   - macOS/Linux: `source .venv/bin/activate`
+2. Activate it: `.venv\Scripts\Activate.ps1` (Windows PowerShell), `.venv\Scripts\activate.bat` (cmd) or `source .venv/bin/activate` (macOS/Linux)
 3. `python -m pip install -r requirements.txt`
-4. `python generate_data.py` (last line: `generated: customers=1200 products=40 orders_raw=13084 tickets=164`)
-5. `python part_a.py` (clean, store, query: writes data/clean, data/instamart.db, outputs/reports/part_a.json)
-6. `python part_b.py` (segments and lapse model: writes outputs/customer_segments.csv, lapse_model.joblib, retention_list.csv, reports/part_b.json)
-7. `python part_c.py` (ticket triage: writes outputs/triage_results.csv, triage_budget_demo.csv, reports/part_c.json)
-8. `python part_d.py` (policy RAG and refund agent: writes outputs/agent_runs.jsonl, refund_ledger.jsonl, state/*.json, reports/part_d.json)
-9. `python -m unittest`
-10. `python validate.py` (last line: `ALL CHECKPOINTS PASSED`)
+4. `python generate_data.py`
+5. `python run_all.py`
+6. `python validate.py`
 
-`python run_all.py` runs steps 5 to 8 in one go.
+Step 4 ends with `generated: customers=1200 products=40 orders_raw=13084 tickets=164`. Step 5 prints one summary line per part. Step 6 ends with `ALL CHECKPOINTS PASSED`. Optional: `python -m unittest discover tests` runs the unit tests. `python part_a.py` to `python part_d.py` run single parts in order. Re-running Part D rewrites `outputs/agent_runs.jsonl`, `outputs/refund_ledger.jsonl` and `state/*.json`; only the ledger timestamps change.
 
 ## Part A
+
+**So what:** INR 2,998,668.80 of completed revenue from 11,110 orders is now trustworthy, after removing 775 duplicate or superseded order rows and repairing 120 junk amounts and 106 negative delivery times.
 
 ### Audit of the raw exports
 
@@ -150,6 +215,8 @@ Correlation (completed orders): order_amount–discount_pct −0.095, order_amou
 
 ## Part B
 
+**So what:** 443 of 1,156 customers (38.32%) stopped ordering in September, and the cohort had spent INR 2,204.54 each on average in the five months before. The selected random forest catches 58 of the 89 lapsers in the test set, and the 138 Premium Big Spenders (INR 7,129.70 average spend) get their own retention list.
+
 All customer behaviour comes from completed orders in `data/clean/orders.csv`, combined with `data/clean/customers.csv`.
 
 ### RFM table (snapshot 2025-10-01 00:00:00)
@@ -181,10 +248,10 @@ All customer behaviour comes from completed orders in `data/clean/orders.csv`, c
 
 | segment_id | Name | Size | Mean recency (days) | Mean frequency | Mean monetary (INR) | Premium | Recommended action |
 |---|---|---|---|---|---|---|---|
-| 1 | Premium Big Spenders | 138 | 24.1 | 6.8 | 7,129.70 | yes | Priority support line and early access to new electronics launches |
-| 2 | Loyal Regulars | 419 | 8.8 | 19.4 | 3,410.02 | no | Subscription-style loyalty pass to protect the weekly basket |
+| 1 | Premium Big Spenders | 138 | 24.1 | 6.8 | 7,129.70 | yes | Assign a priority support line and early access to new electronics launches |
+| 2 | Loyal Regulars | 419 | 8.8 | 19.4 | 3,410.02 | no | Reward with a subscription-style loyalty pass to protect their weekly basket |
 | 0 | Occasional Shoppers | 436 | 28.9 | 3.8 | 1,057.62 | no | Nudge a second monthly order with a free-delivery threshold reminder |
-| 3 | Dormant / Lapsing | 182 | 109.0 | 2.2 | 685.99 | no | Time-limited win-back coupon on favourite grocery staples |
+| 3 | Dormant / Lapsing | 182 | 109.0 | 2.2 | 685.99 | no | Send a time-limited win-back coupon on their favourite grocery staples |
 
 The names come from the profile values, not from cluster numbers:
 - The segment with the highest mean monetary value is **Premium** (`is_premium`).
@@ -279,6 +346,8 @@ The Premium flag comes from the whole-window RFM, which includes the September w
 
 ## Part C
 
+**So what:** all 34 fraud tickets reach the security team at HIGH priority and 11 Premium tickets reach the premium desk. The 17 tickets the pipeline cannot handle safely go to humans, and no email, phone number or order id ever reaches the model.
+
 `part_c.py` triages the 164 tickets in `data/raw/tickets.csv` in file order (read with `keep_default_na=False`), using `mock_llm.py` for every model call and `mock_llm.est_tokens` for every token count. Code: `src/instamart/part_c/` (guardrails, redaction, prompts, llm_client, validation, triage, routing). All numbers below come from `outputs/reports/part_c.json`.
 
 ### Input guardrails and redaction
@@ -354,6 +423,8 @@ The few-shot prompt costs 12,012 extra tokens per run, 2.4 times as many (81.7 m
 **Rule-validated vs sent to humans.** The 147 classified tickets (135 by JSON parsing, 12 by the single-keyword rule) passed the rule-based validator and were routed automatically. The 17 human-review tickets never received an automatic category: 4 empty, 4 too long (never sent to the model) and 9 whose replies failed validation. In the budget demo, the 45 `budget_exhausted` tickets also went to humans. The validator only checks that a reply is well formed and uses an allowed category; it cannot tell whether the category is correct. The zero-shot run shows this: all 21 wrong labels passed validation.
 
 ## Part D
+
+**So what:** policy answers come from the right document for 12 of 12 test questions. Refunds are automated only up to INR 1000: S1 and S2 were refunded INR 128.25 and INR 135.00, S3's INR 1,999.00 went to a human, and a crashed run resumes without paying twice.
 
 `part_d.py` builds the policy assistant and runs the refund agent. Code: `src/instamart/part_d/` (chunking, retrieval, rag, evaluation, tools, agent, checkpoint). Every model call goes through `mock_llm.chat`. Numbers come from `outputs/reports/part_d.json`. A full run first clears `outputs/agent_runs.jsonl`, `outputs/refund_ledger.jsonl` and the `state/*.json` checkpoints, so re-runs reproduce the same files (only ledger timestamps change).
 
@@ -459,13 +530,17 @@ For this refund workflow I would keep ReAct. Each step depends on the last obser
 
 ## Limitations and Next Steps
 
-- The data is synthetic, so the patterns reflect the generator's assumptions rather than real customer behaviour.
-- Missing ages and delivery times are filled with medians. This shrinks the variance of those columns and can hide real differences between cities or categories.
-- The 897 high-value orders are kept as genuine. Any analysis of averages should report medians alongside them.
-- The Premium flag used for the retention list is a post-hoc whole-window label: it comes from RFM over the full window, including the September lapse window. The retention list is therefore illustrative and not a leakage-free evaluation. A production version would segment customers on pre-cutoff data only.
-- The lapse model uses a single 5-month history and one 30-day label window. A rolling, time-based validation over several cutoffs would give a more honest error estimate than one random split.
-- The decision threshold is fixed at 0.5. A cost-weighted threshold, using the value of a retained customer and the cost of a coupon, would suit the retention budget better.
-- Part C's classifier is a keyword mock, so the 100% few-shot accuracy says the prompt carries the right signal for this mock, not that a real model would reach it. The validator checks the format, not the truth: wrong but well-formed categories pass, so a sample of automatically routed tickets should still be audited.
-- The redaction patterns only cover the three formats in the brief. Names, addresses, card numbers, or phone numbers written with spaces or a +91 prefix would pass through unredacted.
-- TF-IDF retrieval matches exact words only, so synonyms ("money back" for "refund") can miss. Fixed 40-word chunks also cut sentences, as the overlap-0 run shows. Sentence-aware chunking or embedding retrieval would be the next step.
-- The refund agent follows the mock's scripted reasoning. Its safety comes from the deterministic tools (the refund rule and the INR 1000 guard in `issue_refund`) and the three limits, not from the model.
+- **Synthetic data.** The data comes from `generate_data.py`, so the patterns reflect the generator's assumptions, not real customer behaviour. Missing ages and delivery times are filled with medians, which shrinks the variance of those columns and can hide real differences between cities or categories. The 897 high-value orders are kept as genuine, so any analysis of averages should report medians alongside them.
+- **Post-hoc Premium label.** The Premium flag used for the retention list is a post-hoc whole-window label: it comes from RFM over the full window, which includes the September lapse window. The retention list is therefore illustrative and not a leakage-free evaluation. A production version would segment customers on pre-cutoff data only.
+- **One split, fixed threshold.** The lapse model uses one 5-month history, one 30-day label window and one random split. Its decision threshold is fixed at 0.5, where a cost-weighted threshold (the value of a retained customer against the cost of a coupon) would suit the retention budget better.
+- **Mock LLM.** Every model call goes to a deterministic keyword mock. The 100% few-shot accuracy says the prompt carries the right signal for this mock, not that a real model would reach it. The validator checks the format, not the truth: wrong but well-formed categories pass, so a sample of automatically routed tickets should still be audited. The refund agent follows the mock's scripted reasoning. Its safety comes from the deterministic tools (the refund rule and the INR 1000 guard in `issue_refund`) and the three limits, not from the model.
+- **Redaction coverage.** The patterns cover only the three formats in the brief. Names, addresses, card numbers, and phone numbers written with spaces or a +91 prefix would pass through unredacted.
+- **TF-IDF synonym limits.** Retrieval matches exact words only, so "money back" or "reimbursement" will not match a chunk that says "refund". Fixed 40-word chunks also cut sentences, as the overlap-0 run shows.
+- **With real data I would:**
+  - validate the cleaning rules against source-system documentation;
+  - build segments and features from pre-cutoff data only, and evaluate with rolling time-based backtests over several cutoffs;
+  - calibrate probabilities and choose the threshold from campaign economics;
+  - put a real LLM behind the same guardrails, validator and retry wrapper, then measure accuracy and cost on a labelled ticket sample;
+  - add NER-based PII detection;
+  - replace TF-IDF with sentence-aware chunking plus embedding or hybrid retrieval, evaluated on a larger question set;
+  - move the refund ledger into a transactional database with a unique key per order and action.
