@@ -23,9 +23,12 @@ Run these from the repository root (Python 3.11 or newer):
    - macOS/Linux: `source .venv/bin/activate`
 3. `python -m pip install -r requirements.txt`
 4. `python generate_data.py` (last line: `generated: customers=1200 products=40 orders_raw=13084 tickets=164`)
-5. `python run_all.py`
-6. `python -m unittest`
-7. `python validate.py` (last line: `ALL CHECKPOINTS PASSED`)
+5. `python part_a.py` (clean, store, query: writes data/clean, data/instamart.db, outputs/reports/part_a.json)
+6. `python part_b.py` (segments and lapse model: writes outputs/customer_segments.csv, lapse_model.joblib, retention_list.csv, reports/part_b.json)
+7. `python -m unittest`
+8. `python validate.py` (last line: `ALL CHECKPOINTS PASSED`)
+
+`python run_all.py` runs steps 5 and 6 in one go.
 
 ## Part A
 
@@ -145,7 +148,132 @@ Correlation (completed orders): order_amount–discount_pct −0.095, order_amou
 
 ## Part B
 
-To be completed in Phase 2.
+All customer behaviour comes from completed orders in `data/clean/orders.csv`, combined with `data/clean/customers.csv`.
+
+### RFM table (snapshot 2025-10-01 00:00:00)
+
+| Metric | Value |
+|---|---|
+| Customers with at least one completed order | 1,175 |
+| Recency (days): median / min / max | 19 / 0 / 180 |
+| Frequency (orders): mean / max | 9.46 / 33 |
+| Monetary (INR): mean / max | 2,552.06 / 14,766.55 |
+
+### K-means on standardised R, F, M (n_init=10, random_state=42)
+
+| K | Inertia | Silhouette |
+|---|---|---|
+| 2 | 1820.8 | 0.465 |
+| 3 | 1268.2 | 0.445 |
+| 4 | 743.1 | **0.526** |
+| 5 | 617.4 | 0.480 |
+| 6 | 503.2 | 0.482 |
+| 7 | 408.5 | 0.416 |
+| 8 | 366.5 | 0.412 |
+
+**Chosen K = 4.** The elbow is at K=4: going from 3 to 4 clusters cuts inertia by 41%, and each later step saves only 10–19%. K=4 also has the best silhouette score (0.526). Its four groups map directly onto four distinct campaigns.
+
+**Why inertia can't choose K on its own:** inertia is the sum of squared distances from each customer to its nearest centroid. Adding centroids can only keep that sum the same or make it smaller, so K=8 always beats K=2, and K=1,175 would reach zero. A falling inertia therefore rewards over-splitting. It has to be read for its elbow and weighed against silhouette and against whether the business can act on the segments.
+
+### Segment profiles (K = 4)
+
+| segment_id | Name | Size | Mean recency (days) | Mean frequency | Mean monetary (INR) | Premium | Recommended action |
+|---|---|---|---|---|---|---|---|
+| 1 | Premium Big Spenders | 138 | 24.1 | 6.8 | 7,129.70 | yes | Priority support line and early access to new electronics launches |
+| 2 | Loyal Regulars | 419 | 8.8 | 19.4 | 3,410.02 | no | Subscription-style loyalty pass to protect the weekly basket |
+| 0 | Occasional Shoppers | 436 | 28.9 | 3.8 | 1,057.62 | no | Nudge a second monthly order with a free-delivery threshold reminder |
+| 3 | Dormant / Lapsing | 182 | 109.0 | 2.2 | 685.99 | no | Time-limited win-back coupon on favourite grocery staples |
+
+The names come from the profile values, not from cluster numbers:
+- The segment with the highest mean monetary value is **Premium** (`is_premium`).
+- Of the rest, the one with the highest mean recency is Dormant, and the one with the highest frequency is Loyal.
+
+Cluster numbers are arbitrary labels with no order. Segment 1 is not "better" than segment 0, and the numbers can change if the data or the library version changes.
+
+PCA (2 components) on the scaled RFM matrix explains 0.634 + 0.218 = **0.852** of the variance. The segments are written to `outputs/customer_segments.csv`.
+
+### Lapse problem
+
+The cutoff is 2025-09-01. A customer is `lapsed` = 1 if they have no completed order from 2025-09-01 to 2025-09-30.
+
+The features are built only from orders dated before the cutoff, plus the clean customer table:
+- recency (days before the cutoff), frequency and monetary
+- average discount_pct and average delivery_minutes of completed orders
+- cancellation rate (cancelled orders ÷ all orders with a final status)
+- favourite category (ties broken alphabetically), city, age, gender, and tenure_days (cutoff − signup_date)
+
+| Item | Value |
+|---|---|
+| Cohort (at least one completed order before the cutoff) | 1,156 customers |
+| Lapsed | 443 (38.32%) |
+| Train / test split (stratified, random_state=42) | 924 / 232 (354 / 89 lapsed) |
+| Missing feature values | 0 (checked in code) |
+| Baseline "never lapsed" on test | accuracy 61.6%, lapsed-class precision / recall / F1 = 0 / 0 / 0 |
+
+**Leakage controls:**
+- No encoder, scaler or resampler saw a test row. `OneHotEncoder(drop="first", handle_unknown="ignore")` for city, gender and favourite category, and `StandardScaler` for the numeric features, sit inside one scikit-learn `Pipeline` that is fitted on training rows only. Oversampling touches only the training set.
+- No data from 2025-09-01 onwards entered the features. A unit test confirms that adding orders on or after the cutoff leaves the features unchanged.
+- The segment labels from Part B task 3 were not used as features.
+
+**Scaler check:** the fitted scaler's mean of frequency is 8.1147, against 8.0285 for the full cohort. They differ because the scaler learned only from the 924 training rows, so the 232 test customers had no influence on it.
+
+### Tuning (GridSearchCV, cv=5, scoring="f1", training rows only)
+
+| Model | Grid | Best parameters | Best CV F1 |
+|---|---|---|---|
+| LogisticRegression(max_iter=1000) | C ∈ {0.01, 0.1, 1, 10, 100} (25 fits) | C = 100 | 0.651 |
+| RandomForestClassifier(n_estimators=100, random_state=42) | max_depth ∈ {3, 5, 8} × min_samples_leaf ∈ {5, 10, 20} (45 fits) | max_depth = 8, min_samples_leaf = 10 | 0.682 |
+
+The logistic-regression CV curve is flat: C = 0.1 / 1 / 10 / 100 score 0.646 / 0.645 / 0.649 / 0.651, all within one fold standard deviation (about 0.03). The brief's reference picks C = 1. Our best C depends only on how ties in favourite category are broken, and the test F1 stays of the same order as the reference.
+
+### Test-set evaluation (after tuning, lapsed class = positive)
+
+| Model | Confusion matrix [[TN, FP], [FN, TP]] | Precision | Recall | F1 |
+|---|---|---|---|---|
+| Baseline (never lapsed) | [[143, 0], [89, 0]] | 0.000 | 0.000 | 0.000 |
+| Logistic regression (C=100) | [[111, 32], [31, 58]] | 0.644 | 0.652 | 0.648 |
+| Random forest (depth 8, leaf 10) | [[112, 31], [31, 58]] | 0.652 | 0.652 | **0.652** |
+
+**Model choice: the random forest.** For Instamart, missing a lapsing customer is the costlier error: that customer's future baskets are lost, and the cohort spent INR 2,204.54 on average in the five months before the cutoff. Wrongly targeting a loyal customer costs only a coupon's margin. The two models catch exactly the same 58 of 89 lapsers, so they tie on the expensive error. The forest makes one fewer wasted offer and has the highest test F1 (0.652, well above the 0.55 floor). It also captures non-linear effects, such as high spend combined with few orders, without manual interaction terms.
+
+### Class-balance experiment (oversampling the training set only)
+
+All 924 training rows are kept. 216 lapsed rows are drawn with replacement (random_state=42), giving 570 rows per class. The best logistic regression is then refitted and evaluated on the original test set.
+
+| Logistic regression | Precision | Recall | F1 |
+|---|---|---|---|
+| Unbalanced training | 0.644 | 0.652 | 0.648 |
+| Oversampled to 570 / 570 | 0.589 | **0.854** | 0.697 |
+
+**Recall moved the most (+0.20).** The balanced model finds 76 of 89 lapsers instead of 58, while precision falls slightly rather than rising: 53 loyal customers are wrongly flagged instead of 32. For the retention team, this means a wider net that catches most at-risk customers. Given the cost asymmetry, that is usually worth the extra coupons.
+
+### Interpretation
+
+Top 5 random-forest importances:
+
+| Feature | Importance | Business reading |
+|---|---|---|
+| frequency | 0.307 | Ordering habit is the strongest signal: customers with many past orders keep ordering |
+| monetary | 0.247 | Spend level separates low-value one-off buyers from established customers |
+| recency | 0.115 | A long gap before the cutoff is an early warning of churn |
+| cancellation_rate | 0.062 | Customers with more cancelled orders behave differently |
+| avg_discount_pct | 0.058 | How much a customer depends on discounts shifts their lapse risk |
+
+Logistic-regression coefficient signs (on scaled features):
+
+| Feature | Coefficient | Business reading |
+|---|---|---|
+| frequency | −1.70 | More past orders mean much lower lapse odds, so protecting the habit protects revenue |
+| recency | +0.04 | A longer silence before the cutoff means slightly higher lapse odds (small, because frequency already captures most of it) |
+| monetary | +0.28 | At the same number of orders, higher spend means higher lapse odds: big-ticket one-off buyers leave after their purchase |
+
+### Persistence and retention list
+
+The random forest pipeline is saved with `joblib.dump` to `outputs/lapse_model.joblib`. When reloaded with `joblib.load`, it reproduces the original 232 test predictions exactly. This is asserted in code and re-checked by `validate.py`.
+
+The cohort's test set contains 40 Premium customers. `outputs/retention_list.csv` holds the 10 with the highest predicted lapse probability (0.4497 to 0.5025). **0 of these 10 actually lapsed.** Premium customers lapse less often than the cohort overall (31.9% vs 38.3%), and only one of them (C0060, 0.5025) is above the 0.5 decision threshold. The 12 Premium test customers who did lapse are ranked lower, which is another sign that this list is not a reliable evaluation.
+
+The Premium flag comes from the whole-window RFM, which includes the September window that defines the lapse label. That makes it a post-hoc label, so this retention list is illustrative and not a leakage-free evaluation.
 
 ## Part C
 
@@ -160,4 +288,7 @@ To be completed in Phase 4.
 - The data is synthetic, so the patterns reflect the generator's assumptions rather than real customer behaviour.
 - Missing ages and delivery times are filled with medians. This shrinks the variance of those columns and can hide real differences between cities or categories.
 - The 897 high-value orders are kept as genuine. Any analysis of averages should report medians alongside them.
+- The Premium flag used for the retention list is a post-hoc whole-window label: it comes from RFM over the full window, including the September lapse window. The retention list is therefore illustrative and not a leakage-free evaluation. A production version would segment customers on pre-cutoff data only.
+- The lapse model uses a single 5-month history and one 30-day label window. A rolling, time-based validation over several cutoffs would give a more honest error estimate than one random split.
+- The decision threshold is fixed at 0.5. A cost-weighted threshold, using the value of a retained customer and the cost of a coupon, would suit the retention budget better.
 - Later Parts and their limitations are added in the next phases.
