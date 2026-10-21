@@ -7,8 +7,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 from instamart import io_utils  # noqa: E402
 from instamart.part_a import pipeline as part_a  # noqa: E402
+from instamart.part_b import pipeline as part_b  # noqa: E402
 
-PARTS = [("A", part_a.run)]  # later phases append ("B", ...), ("C", ...), ("D", ...)
+PARTS = [("A", part_a.run), ("B", part_b.run)]  # later phases append ("C", ...), ("D", ...)
 
 if __name__ == "__main__":
     io_utils.setup_logging()
